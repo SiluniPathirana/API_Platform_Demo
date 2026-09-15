@@ -1,0 +1,300 @@
+{
+  "info": {
+    "name": "API Platform Demo",
+    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected with org identity read from the verified org_name claim (not a header). Folder 1: OrderManagementAPI (claim-based dynamic routing + token exchange). Folder 2: AgentChatAPI (claim-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nBEFORE USE: set the client_secret collection variable to your own IS application's secret -- it's redacted here since this collection is committed to a public repo. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "is_base_url", "value": "https://localhost:9444" },
+    { "key": "gateway_base_url", "value": "http://localhost:8080" },
+    { "key": "client_id", "value": "m7Xt_kiteB6x_DJtJaf2viZwHqUa" },
+    { "key": "client_secret", "value": "REPLACE_WITH_YOUR_CLIENT_SECRET" },
+    { "key": "redirect_uri", "value": "http://localhost:9090/playground2/oauth2client" },
+    { "key": "access_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. OrderManagementAPI - Dynamic Routing",
+      "item": [
+        {
+          "name": "1. Generate Token (Client Credentials)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData.access_token) {",
+                  "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+                  "    console.log(\"Saved access_token to collection variable.\");",
+                  "} else {",
+                  "    console.error(\"No access_token in response:\", jsonData);",
+                  "}",
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response has access_token\", function () {",
+                  "    pm.expect(jsonData.access_token).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{client_id}}", "type": "string" },
+                { "key": "password", "value": "{{client_secret}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "client_credentials", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{is_base_url}}/oauth2/token",
+              "host": ["{{is_base_url}}"],
+              "path": ["oauth2", "token"]
+            },
+            "description": "Requests an application-level access token from the WSO2 IS using the client_credentials grant. No username/password needed. The test script below automatically saves the returned access_token into the {{access_token}} collection variable.\n\nNOTE: this token's org_name claim is \"Super\" (the app's own default tenant) -- it will NOT match Railco/Acme, so it's only useful for testing 401/502/503 paths, not the AgentChatAPI rate-limit demo below. Use request 2a/2b for a real Railco/Acme user token."
+          }
+        },
+        {
+          "name": "2a. Get Authorization Code (open in a real Chrome/Safari tab, not Postman)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{is_base_url}}/oauth2/authorize?response_type=code&client_id={{client_id}}&nonce=oidc&redirect_uri={{redirect_uri}}&scope=openid",
+              "host": ["{{is_base_url}}"],
+              "path": ["oauth2", "authorize"],
+              "query": [
+                { "key": "response_type", "value": "code" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "nonce", "value": "oidc" },
+                { "key": "redirect_uri", "value": "{{redirect_uri}}" },
+                { "key": "scope", "value": "openid" }
+              ]
+            },
+            "description": "DO NOT click Send here. Instead: click the 'Code' link under the request URL (or just copy the Raw URL above), paste it into a normal browser tab (Chrome/Safari), and press enter. Log in as the user you want a token for (e.g. a Railco or Acme user) and approve consent. The browser will redirect to {{redirect_uri}} (localhost:9090/...), which isn't running -- that's fine, the browser still shows a 'can't connect' page WITH the full redirected URL in the address bar. Copy the 'code=' query parameter value from that URL, then paste it into request 2b's body (the 'code' field) before running 2b -- codes are single-use and expire quickly, so run 2b right after."
+          },
+          "response": []
+        },
+        {
+          "name": "2b. Generate Token (Authorization Code)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData.access_token) {",
+                  "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+                  "    console.log(\"Saved access_token to collection variable.\");",
+                  "} else {",
+                  "    console.error(\"No access_token in response:\", jsonData);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{client_id}}", "type": "string" },
+                { "key": "password", "value": "{{client_secret}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "authorization_code", "type": "text" },
+                { "key": "code", "value": "PASTE_CODE_FROM_REQUEST_2a_HERE", "type": "text" },
+                { "key": "redirect_uri", "value": "{{redirect_uri}}", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{is_base_url}}/oauth2/token",
+              "host": ["{{is_base_url}}"],
+              "path": ["oauth2", "token"]
+            },
+            "description": "Replace PASTE_CODE_FROM_REQUEST_2a_HERE in the body above with the actual code from request 2a's redirect URL, then click Send (this one you DO send directly). On success, the test script automatically saves access_token into the {{access_token}} collection variable, same as request 1 -- but this one carries the real logged-in user's org_name claim (e.g. \"Railco\"), which is what the AgentChatAPI rate-limit demo below needs."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Invoke OrderManagementAPI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request completed\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 502, 503]);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{access_token}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gateway_base_url}}/order-management/v1.0/orders",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["order-management", "v1.0", "orders"]
+            },
+            "description": "Calls OrderManagementAPI-v1.0 using the token saved above. jwt-auth verifies the token, then dynamic-routing reads org_name from the verified claim and routes to the matching upstreamDefinitions entry (\"Railco\" or \"Acme\"). A token whose org claim doesn't match either name returns 502/503 by design (no fallback map configured)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. AgentChatAPI - Token Rate Limiting",
+      "description": "Requires a REAL Railco (or Acme) user token from folder 1's request 2a/2b -- run those first if {{access_token}} isn't already set to one (a client_credentials token won't work here, its org_name is \"Super\"). Current Railco limits: org=500/min, usecase1=200/min, usecase2=100/min. Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50).",
+      "item": [
+        {
+          "name": "1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log(\"Status:\", pm.response.code);",
+                  "console.log(\"x-ratelimit-remaining:\", pm.response.headers.get(\"x-ratelimit-remaining\"));",
+                  "console.log(\"x-ratelimit-quota:\", pm.response.headers.get(\"x-ratelimit-quota\"));",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Use-Case-Id", "value": "usecase1" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [ { "key": "token", "value": "{{access_token}}", "type": "string" } ]
+            },
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["agent", "v1.0", "chat", "completions"]
+            },
+            "description": "Consumes railco-usecase1-token-budget (200/min) AND railco-org-token-budget (500/min) simultaneously, since org quota has no use-case filter and matches every Railco call. At 50 tokens/call: usecase1 alone allows 4 calls before the 5th is blocked (429, x-ratelimit-quota: railco-usecase1-token-budget) -- click Send 5 times in a row to see it happen."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Railco usecase2 (run 3x -- 1-2 succeed, 3rd blocked at 429)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log(\"Status:\", pm.response.code);",
+                  "console.log(\"x-ratelimit-remaining:\", pm.response.headers.get(\"x-ratelimit-remaining\"));",
+                  "console.log(\"x-ratelimit-quota:\", pm.response.headers.get(\"x-ratelimit-quota\"));",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Use-Case-Id", "value": "usecase2" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [ { "key": "token", "value": "{{access_token}}", "type": "string" } ]
+            },
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["agent", "v1.0", "chat", "completions"]
+            },
+            "description": "Consumes railco-usecase2-token-budget (100/min) AND railco-org-token-budget simultaneously. At 50 tokens/call: usecase2 alone allows 2 calls before the 3rd is blocked (429, x-ratelimit-quota: railco-usecase2-token-budget) -- click Send 3 times in a row to see it happen. After running this AND request 1 above to full exhaustion, the org budget has consumed 200 (usecase1) + 100 (usecase2) = 300 of its 500 total -- 200 still remaining, proven by request 3 below."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Railco org quota STILL has room (different use-case, after 1+2 exhausted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Org quota still had room -- 200 even though usecase1/usecase2 are individually exhausted\", function () {",
+                  "    pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code);",
+                  "console.log(\"x-ratelimit-remaining:\", pm.response.headers.get(\"x-ratelimit-remaining\"));",
+                  "console.log(\"x-ratelimit-quota:\", pm.response.headers.get(\"x-ratelimit-quota\"));",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Use-Case-Id", "value": "usecase-onboarding" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [ { "key": "token", "value": "{{access_token}}", "type": "string" } ]
+            },
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["agent", "v1.0", "chat", "completions"]
+            },
+            "description": "THE DEMO POINT: X-Use-Case-Id here is \"usecase-onboarding\" -- a use-case with NO dedicated quota configured, so only railco-org-token-budget (500/min) applies to this call, not any per-use-case limit. Run this AFTER exhausting requests 1 and 2 above (usecase1 and usecase2 both individually blocked at 429). This call still succeeds with 200, proving the org-wide budget still has room (500 - 200 - 100 = 200 remaining) even though both specific use-case quotas are maxed out -- org and use-case budgets are independent, and a 3rd/other use-case is only ever gated by the org-wide ceiling."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
