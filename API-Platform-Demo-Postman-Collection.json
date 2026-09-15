@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "API Platform Demo",
-    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected with org identity read from the verified org_name claim (not a header). Folder 1: OrderManagementAPI (claim-based dynamic routing + token exchange). Folder 2: AgentChatAPI (claim-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nGet a token by running '1a' (Railco) or '1b' (Acme) -- each uses that org's own client_credentials application and saves into the shared {{access_token}} variable. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
+    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected with org identity read from the verified org_name claim (not a header). Folder 1: OrderManagementAPI (claim-based dynamic routing + token exchange). Folder 2: AgentChatAPI (claim-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nRun '1a' (Railco) and/or '1b' (Acme) to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,7 +12,8 @@
     { "key": "acme_is_base_url", "value": "https://localhost:9444" },
     { "key": "acme_client_id", "value": "REPLACE_WITH_ACME_CLIENT_ID" },
     { "key": "acme_client_secret", "value": "REPLACE_WITH_ACME_CLIENT_SECRET" },
-    { "key": "access_token", "value": "" }
+    { "key": "railco_access_token", "value": "" },
+    { "key": "acme_access_token", "value": "" }
   ],
   "item": [
     {
@@ -28,8 +29,8 @@
                 "exec": [
                   "const jsonData = pm.response.json();",
                   "if (jsonData.access_token) {",
-                  "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
-                  "    console.log(\"Saved Railco access_token to collection variable.\");",
+                  "    pm.collectionVariables.set(\"railco_access_token\", jsonData.access_token);",
+                  "    console.log(\"Saved Railco access_token to railco_access_token collection variable.\");",
                   "} else {",
                   "    console.error(\"No access_token in response:\", jsonData);",
                   "}",
@@ -66,7 +67,7 @@
               "host": ["{{railco_is_base_url}}"],
               "path": ["oauth2", "token"]
             },
-            "description": "Requests an application-level access token using Railco's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{railco_is_base_url}} in case Railco is served by a different IS instance/tenant than Acme). Fill in railco_client_id / railco_client_secret / railco_is_base_url in the collection variables first. On success, the test script saves access_token into the {{access_token}} collection variable, ready for the AgentChatAPI/OrderManagementAPI requests below -- assuming this application's own org_name claim resolves to \"Railco\" on this IS."
+            "description": "Requests an application-level access token using Railco's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{railco_is_base_url}} in case Railco is served by a different IS instance/tenant than Acme). Fill in railco_client_id / railco_client_secret / railco_is_base_url in the collection variables first. On success, the test script saves access_token into {{railco_access_token}} -- a separate variable from Acme's, so both tokens can be held at once and every Railco-specific request below explicitly uses this one -- assuming this application's own org_name claim resolves to \"Railco\" on this IS."
           }
         },
         {
@@ -79,8 +80,8 @@
                 "exec": [
                   "const jsonData = pm.response.json();",
                   "if (jsonData.access_token) {",
-                  "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
-                  "    console.log(\"Saved Acme access_token to collection variable.\");",
+                  "    pm.collectionVariables.set(\"acme_access_token\", jsonData.access_token);",
+                  "    console.log(\"Saved Acme access_token to acme_access_token collection variable.\");",
                   "} else {",
                   "    console.error(\"No access_token in response:\", jsonData);",
                   "}",
@@ -117,11 +118,11 @@
               "host": ["{{acme_is_base_url}}"],
               "path": ["oauth2", "token"]
             },
-            "description": "Requests an application-level access token using Acme's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{acme_is_base_url}} in case Acme is served by a different IS instance/tenant than Railco). Fill in acme_client_id / acme_client_secret / acme_is_base_url in the collection variables first. On success, the test script saves access_token into the {{access_token}} collection variable, ready for the AgentChatAPI/OrderManagementAPI requests below -- assuming this application's own org_name claim resolves to \"Acme\" on this IS."
+            "description": "Requests an application-level access token using Acme's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{acme_is_base_url}} in case Acme is served by a different IS instance/tenant than Railco). Fill in acme_client_id / acme_client_secret / acme_is_base_url in the collection variables first. On success, the test script saves access_token into {{acme_access_token}} -- a separate variable from Railco's, so both tokens can be held at once and every Acme-specific request below explicitly uses this one -- assuming this application's own org_name claim resolves to \"Acme\" on this IS."
           }
         },
         {
-          "name": "2. Invoke OrderManagementAPI",
+          "name": "2a. Invoke OrderManagementAPI - Railco",
           "event": [
             {
               "listen": "test",
@@ -145,7 +146,7 @@
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{access_token}}", "type": "string" }
+                { "key": "token", "value": "{{railco_access_token}}", "type": "string" }
               ]
             },
             "body": {
@@ -158,14 +159,55 @@
               "host": ["{{gateway_base_url}}"],
               "path": ["order-management", "v1.0", "orders"]
             },
-            "description": "Calls OrderManagementAPI-v1.0 using the token saved above. jwt-auth verifies the token, then dynamic-routing reads org_name from the verified claim and routes to the matching upstreamDefinitions entry (\"Railco\" or \"Acme\"). A token whose org claim doesn't match either name returns 502/503 by design (no fallback map configured)."
+            "description": "Calls OrderManagementAPI-v1.0 using {{railco_access_token}} (run request 1a first). jwt-auth verifies the token, then dynamic-routing reads org_name from the verified claim and routes to the matching upstreamDefinitions entry (\"railco\"). A token whose org claim doesn't match returns 502/503 by design (no fallback map configured)."
+          }
+        },
+        {
+          "name": "2b. Invoke OrderManagementAPI - Acme",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request completed\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 502, 503]);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{acme_access_token}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gateway_base_url}}/order-management/v1.0/orders",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["order-management", "v1.0", "orders"]
+            },
+            "description": "Calls OrderManagementAPI-v1.0 using {{acme_access_token}} (run request 1b first). jwt-auth verifies the token, then dynamic-routing reads org_name from the verified claim and routes to the matching upstreamDefinitions entry (\"acme\"). A token whose org claim doesn't match returns 502/503 by design (no fallback map configured)."
           }
         }
       ]
     },
     {
       "name": "2. AgentChatAPI - Token Rate Limiting",
-      "description": "Requires a token whose org_name claim is Railco or Acme -- run folder 1's request 1a (Railco) or 1b (Acme) first. Current Railco limits: org=500/min, usecase1=200/min, usecase2=100/min. Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50).",
+      "description": "Requests 1-3 are Railco-specific ({{railco_access_token}}, run folder 1's request 1a first); requests 4-6 are the Acme equivalents ({{acme_access_token}}, run request 1b first). Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50). Limits -- Railco: org=500/min, usecase1=200/min, usecase2=100/min. Acme: org=150/min, usecase1=50/min, usecase2=70/min. Requests 3 and 6 make the SAME point with OPPOSITE outcomes: after both named use-case quotas are exhausted, Railco's org budget still has room (200 left of 500) but Acme's is also fully exhausted (150 of 150 consumed) -- whether the org budget survives depends entirely on how the numbers relate to each other.",
       "item": [
         {
           "name": "1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)",
@@ -191,7 +233,7 @@
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{access_token}}", "type": "string" } ]
+              "bearer": [ { "key": "token", "value": "{{railco_access_token}}", "type": "string" } ]
             },
             "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
             "url": {
@@ -227,7 +269,7 @@
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{access_token}}", "type": "string" } ]
+              "bearer": [ { "key": "token", "value": "{{railco_access_token}}", "type": "string" } ]
             },
             "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
             "url": {
@@ -266,7 +308,7 @@
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{access_token}}", "type": "string" } ]
+              "bearer": [ { "key": "token", "value": "{{railco_access_token}}", "type": "string" } ]
             },
             "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
             "url": {
@@ -275,6 +317,117 @@
               "path": ["agent", "v1.0", "chat", "completions"]
             },
             "description": "THE DEMO POINT: X-Use-Case-Id here is \"usecase-onboarding\" -- a use-case with NO dedicated quota configured, so only railco-org-token-budget (500/min) applies to this call, not any per-use-case limit. Run this AFTER exhausting requests 1 and 2 above (usecase1 and usecase2 both individually blocked at 429). This call still succeeds with 200, proving the org-wide budget still has room (500 - 200 - 100 = 200 remaining) even though both specific use-case quotas are maxed out -- org and use-case budgets are independent, and a 3rd/other use-case is only ever gated by the org-wide ceiling."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Acme usecase1 (run 2x -- 1st succeeds, 2nd blocked at 429)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log(\"Status:\", pm.response.code);",
+                  "console.log(\"x-ratelimit-remaining:\", pm.response.headers.get(\"x-ratelimit-remaining\"));",
+                  "console.log(\"x-ratelimit-quota:\", pm.response.headers.get(\"x-ratelimit-quota\"));",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Use-Case-Id", "value": "usecase1" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [ { "key": "token", "value": "{{acme_access_token}}", "type": "string" } ]
+            },
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["agent", "v1.0", "chat", "completions"]
+            },
+            "description": "Consumes acme-usecase1-token-budget (50/min) AND acme-org-token-budget (150/min) simultaneously. At 50 tokens/call, acme-usecase1's limit (50) is consumed in a single call -- the 1st call succeeds (pre-check 0<50), the 2nd is blocked immediately (pre-check 50 not<50, 429, x-ratelimit-quota: acme-usecase1-token-budget) -- click Send twice to see it happen."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Acme usecase2 (run 3x -- 1-2 succeed, 3rd blocked at 429)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log(\"Status:\", pm.response.code);",
+                  "console.log(\"x-ratelimit-remaining:\", pm.response.headers.get(\"x-ratelimit-remaining\"));",
+                  "console.log(\"x-ratelimit-quota:\", pm.response.headers.get(\"x-ratelimit-quota\"));",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Use-Case-Id", "value": "usecase2" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [ { "key": "token", "value": "{{acme_access_token}}", "type": "string" } ]
+            },
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["agent", "v1.0", "chat", "completions"]
+            },
+            "description": "Consumes acme-usecase2-token-budget (70/min) AND acme-org-token-budget simultaneously. At 50 tokens/call: call 1 pre-checks 0<70 (allowed, running total becomes 50), call 2 pre-checks 50<70 (still allowed even though the next deduction overshoots the nominal 70 limit -- running total becomes 100), call 3 pre-checks 100<70 -- false, blocked (429, x-ratelimit-quota: acme-usecase2-token-budget). Click Send 3 times to see it happen. After running this AND request 4 above to full exhaustion, the org budget has consumed 50 (usecase1) + 100 (usecase2) = 150 of its 150 total -- fully exhausted, unlike Railco's org budget which still had room. See request 6 below."
+          },
+          "response": []
+        },
+        {
+          "name": "6. Acme org quota ALSO exhausted (different use-case, after 4+5 exhausted -- unlike Railco)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Org quota is also exhausted -- 429, unlike Railco where it still had room\", function () {",
+                  "    pm.expect(pm.response.code).to.equal(429);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code);",
+                  "console.log(\"x-ratelimit-remaining:\", pm.response.headers.get(\"x-ratelimit-remaining\"));",
+                  "console.log(\"x-ratelimit-quota:\", pm.response.headers.get(\"x-ratelimit-quota\"));",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Use-Case-Id", "value": "usecase-onboarding" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [ { "key": "token", "value": "{{acme_access_token}}", "type": "string" } ]
+            },
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
+              "host": ["{{gateway_base_url}}"],
+              "path": ["agent", "v1.0", "chat", "completions"]
+            },
+            "description": "THE CONTRASTING DEMO POINT: unlike request 3 (Railco), this one is expected to return 429, not 200. Acme's usecase1 (50) + usecase2 (70, but only 100 actually consumed before blocking) budgets happen to sum to exactly Acme's org budget (150) -- 50 + 100 = 150. So once both named use-case quotas are individually exhausted, acme-org-token-budget is ALSO fully consumed, and this different/unnamed use-case gets blocked too (429, x-ratelimit-quota: acme-org-token-budget). Run this AFTER exhausting requests 4 and 5 above. This is a deliberate contrast with Railco (request 3): whether the org budget still has headroom after every named use-case is exhausted depends entirely on how the numbers are configured relative to each other -- it is not guaranteed, and Acme's current limits happen to leave zero room."
           },
           "response": []
         }
