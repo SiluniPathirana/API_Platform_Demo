@@ -55,10 +55,10 @@ spec:
     main:
       url: http://host.docker.internal:7096   # default/fallback — used when org_id has no matching upstreamDefinitions entry
   upstreamDefinitions:
-    - name: Railco
+    - name: railco
       upstreams:
         - url: http://host.docker.internal:7093
-    - name: Acme
+    - name: acme
       upstreams:
         - url: http://host.docker.internal:7095
   policies:

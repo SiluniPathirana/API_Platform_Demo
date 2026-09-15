@@ -61,7 +61,7 @@ spec:
             keyExtraction:
               - type: authproperty
                 key: org_name
-                match: { type: regex, value: "^Railco$" }
+                match: { type: regex, value: "^railco$" }
             costExtraction:
               enabled: true
               sources:
@@ -76,7 +76,7 @@ spec:
             keyExtraction:
               - type: authproperty
                 key: org_name
-                match: { type: regex, value: "^Railco$" }
+                match: { type: regex, value: "^railco$" }
               - type: header
                 key: X-Use-Case-Id
                 match: { type: regex, value: "^usecase1$" }
@@ -94,7 +94,7 @@ spec:
             keyExtraction:
               - type: authproperty
                 key: org_name
-                match: { type: regex, value: "^Railco$" }
+                match: { type: regex, value: "^railco$" }
               - type: header
                 key: X-Use-Case-Id
                 match: { type: regex, value: "^usecase2$" }
@@ -113,7 +113,7 @@ spec:
             keyExtraction:
               - type: authproperty
                 key: org_name
-                match: { type: regex, value: "^Acme$" }
+                match: { type: regex, value: "^acme$" }
             costExtraction:
               enabled: true
               sources:
@@ -128,7 +128,7 @@ spec:
             keyExtraction:
               - type: authproperty
                 key: org_name
-                match: { type: regex, value: "^Acme$" }
+                match: { type: regex, value: "^acme$" }
               - type: header
                 key: X-Use-Case-Id
                 match: { type: regex, value: "^usecase1$" }
@@ -146,7 +146,7 @@ spec:
             keyExtraction:
               - type: authproperty
                 key: org_name
-                match: { type: regex, value: "^Acme$" }
+                match: { type: regex, value: "^acme$" }
               - type: header
                 key: X-Use-Case-Id
                 match: { type: regex, value: "^usecase2$" }
