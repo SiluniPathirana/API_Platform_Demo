@@ -1,15 +1,17 @@
 {
   "info": {
     "name": "API Platform Demo",
-    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected with org identity read from the verified org_name claim (not a header). Folder 1: OrderManagementAPI (claim-based dynamic routing + token exchange). Folder 2: AgentChatAPI (claim-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nBEFORE USE: set the client_secret collection variable to your own IS application's secret -- it's redacted here since this collection is committed to a public repo. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
+    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected with org identity read from the verified org_name claim (not a header). Folder 1: OrderManagementAPI (claim-based dynamic routing + token exchange). Folder 2: AgentChatAPI (claim-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nGet a token by running '1a' (Railco) or '1b' (Acme) -- each uses that org's own client_credentials application and saves into the shared {{access_token}} variable. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "is_base_url", "value": "https://localhost:9444" },
     { "key": "gateway_base_url", "value": "http://localhost:8080" },
-    { "key": "client_id", "value": "m7Xt_kiteB6x_DJtJaf2viZwHqUa" },
-    { "key": "client_secret", "value": "REPLACE_WITH_YOUR_CLIENT_SECRET" },
-    { "key": "redirect_uri", "value": "http://localhost:9090/playground2/oauth2client" },
+    { "key": "railco_is_base_url", "value": "https://localhost:9444" },
+    { "key": "railco_client_id", "value": "REPLACE_WITH_RAILCO_CLIENT_ID" },
+    { "key": "railco_client_secret", "value": "REPLACE_WITH_RAILCO_CLIENT_SECRET" },
+    { "key": "acme_is_base_url", "value": "https://localhost:9444" },
+    { "key": "acme_client_id", "value": "REPLACE_WITH_ACME_CLIENT_ID" },
+    { "key": "acme_client_secret", "value": "REPLACE_WITH_ACME_CLIENT_SECRET" },
     { "key": "access_token", "value": "" }
   ],
   "item": [
@@ -17,7 +19,7 @@
       "name": "1. OrderManagementAPI - Dynamic Routing",
       "item": [
         {
-          "name": "1. Generate Token (Client Credentials)",
+          "name": "1a. Generate Token - Railco (Client Credentials)",
           "event": [
             {
               "listen": "test",
@@ -27,7 +29,7 @@
                   "const jsonData = pm.response.json();",
                   "if (jsonData.access_token) {",
                   "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
-                  "    console.log(\"Saved access_token to collection variable.\");",
+                  "    console.log(\"Saved Railco access_token to collection variable.\");",
                   "} else {",
                   "    console.error(\"No access_token in response:\", jsonData);",
                   "}",
@@ -49,8 +51,8 @@
             "auth": {
               "type": "basic",
               "basic": [
-                { "key": "username", "value": "{{client_id}}", "type": "string" },
-                { "key": "password", "value": "{{client_secret}}", "type": "string" }
+                { "key": "username", "value": "{{railco_client_id}}", "type": "string" },
+                { "key": "password", "value": "{{railco_client_secret}}", "type": "string" }
               ]
             },
             "body": {
@@ -60,36 +62,15 @@
               ]
             },
             "url": {
-              "raw": "{{is_base_url}}/oauth2/token",
-              "host": ["{{is_base_url}}"],
+              "raw": "{{railco_is_base_url}}/oauth2/token",
+              "host": ["{{railco_is_base_url}}"],
               "path": ["oauth2", "token"]
             },
-            "description": "Requests an application-level access token from the WSO2 IS using the client_credentials grant. No username/password needed. The test script below automatically saves the returned access_token into the {{access_token}} collection variable.\n\nNOTE: this token's org_name claim is \"Super\" (the app's own default tenant) -- it will NOT match Railco/Acme, so it's only useful for testing 401/502/503 paths, not the AgentChatAPI rate-limit demo below. Use request 2a/2b for a real Railco/Acme user token."
+            "description": "Requests an application-level access token using Railco's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{railco_is_base_url}} in case Railco is served by a different IS instance/tenant than Acme). Fill in railco_client_id / railco_client_secret / railco_is_base_url in the collection variables first. On success, the test script saves access_token into the {{access_token}} collection variable, ready for the AgentChatAPI/OrderManagementAPI requests below -- assuming this application's own org_name claim resolves to \"Railco\" on this IS."
           }
         },
         {
-          "name": "2a. Get Authorization Code (open in a real Chrome/Safari tab, not Postman)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{is_base_url}}/oauth2/authorize?response_type=code&client_id={{client_id}}&nonce=oidc&redirect_uri={{redirect_uri}}&scope=openid",
-              "host": ["{{is_base_url}}"],
-              "path": ["oauth2", "authorize"],
-              "query": [
-                { "key": "response_type", "value": "code" },
-                { "key": "client_id", "value": "{{client_id}}" },
-                { "key": "nonce", "value": "oidc" },
-                { "key": "redirect_uri", "value": "{{redirect_uri}}" },
-                { "key": "scope", "value": "openid" }
-              ]
-            },
-            "description": "DO NOT click Send here. Instead: click the 'Code' link under the request URL (or just copy the Raw URL above), paste it into a normal browser tab (Chrome/Safari), and press enter. Log in as the user you want a token for (e.g. a Railco or Acme user) and approve consent. The browser will redirect to {{redirect_uri}} (localhost:9090/...), which isn't running -- that's fine, the browser still shows a 'can't connect' page WITH the full redirected URL in the address bar. Copy the 'code=' query parameter value from that URL, then paste it into request 2b's body (the 'code' field) before running 2b -- codes are single-use and expire quickly, so run 2b right after."
-          },
-          "response": []
-        },
-        {
-          "name": "2b. Generate Token (Authorization Code)",
+          "name": "1b. Generate Token - Acme (Client Credentials)",
           "event": [
             {
               "listen": "test",
@@ -99,10 +80,16 @@
                   "const jsonData = pm.response.json();",
                   "if (jsonData.access_token) {",
                   "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
-                  "    console.log(\"Saved access_token to collection variable.\");",
+                  "    console.log(\"Saved Acme access_token to collection variable.\");",
                   "} else {",
                   "    console.error(\"No access_token in response:\", jsonData);",
-                  "}"
+                  "}",
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response has access_token\", function () {",
+                  "    pm.expect(jsonData.access_token).to.exist;",
+                  "});"
                 ]
               }
             }
@@ -115,29 +102,26 @@
             "auth": {
               "type": "basic",
               "basic": [
-                { "key": "username", "value": "{{client_id}}", "type": "string" },
-                { "key": "password", "value": "{{client_secret}}", "type": "string" }
+                { "key": "username", "value": "{{acme_client_id}}", "type": "string" },
+                { "key": "password", "value": "{{acme_client_secret}}", "type": "string" }
               ]
             },
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                { "key": "grant_type", "value": "authorization_code", "type": "text" },
-                { "key": "code", "value": "PASTE_CODE_FROM_REQUEST_2a_HERE", "type": "text" },
-                { "key": "redirect_uri", "value": "{{redirect_uri}}", "type": "text" }
+                { "key": "grant_type", "value": "client_credentials", "type": "text" }
               ]
             },
             "url": {
-              "raw": "{{is_base_url}}/oauth2/token",
-              "host": ["{{is_base_url}}"],
+              "raw": "{{acme_is_base_url}}/oauth2/token",
+              "host": ["{{acme_is_base_url}}"],
               "path": ["oauth2", "token"]
             },
-            "description": "Replace PASTE_CODE_FROM_REQUEST_2a_HERE in the body above with the actual code from request 2a's redirect URL, then click Send (this one you DO send directly). On success, the test script automatically saves access_token into the {{access_token}} collection variable, same as request 1 -- but this one carries the real logged-in user's org_name claim (e.g. \"Railco\"), which is what the AgentChatAPI rate-limit demo below needs."
-          },
-          "response": []
+            "description": "Requests an application-level access token using Acme's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{acme_is_base_url}} in case Acme is served by a different IS instance/tenant than Railco). Fill in acme_client_id / acme_client_secret / acme_is_base_url in the collection variables first. On success, the test script saves access_token into the {{access_token}} collection variable, ready for the AgentChatAPI/OrderManagementAPI requests below -- assuming this application's own org_name claim resolves to \"Acme\" on this IS."
+          }
         },
         {
-          "name": "3. Invoke OrderManagementAPI",
+          "name": "2. Invoke OrderManagementAPI",
           "event": [
             {
               "listen": "test",
@@ -181,7 +165,7 @@
     },
     {
       "name": "2. AgentChatAPI - Token Rate Limiting",
-      "description": "Requires a REAL Railco (or Acme) user token from folder 1's request 2a/2b -- run those first if {{access_token}} isn't already set to one (a client_credentials token won't work here, its org_name is \"Super\"). Current Railco limits: org=500/min, usecase1=200/min, usecase2=100/min. Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50).",
+      "description": "Requires a token whose org_name claim is Railco or Acme -- run folder 1's request 1a (Railco) or 1b (Acme) first. Current Railco limits: org=500/min, usecase1=200/min, usecase2=100/min. Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50).",
       "item": [
         {
           "name": "1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)",
