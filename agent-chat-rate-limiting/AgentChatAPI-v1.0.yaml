@@ -6,9 +6,10 @@
 # an LLM-style agent backend by customer org and by use-case, based on
 # actual token usage (not just request count).
 #
-# PROTECTED: jwt-auth verifies the caller's token against the WSO2 IS
-# instance (localhost:9444, see [policy_configurations.jwtauth_v1] in
-# config.toml). Org identity comes from the verified org_name claim
+# PROTECTED: jwt-auth verifies the caller's token against either of two
+# WSO2 IS key managers (IS-railco, IS-acme -- see
+# [policy_configurations.jwtauth_v1] in config.toml). Org identity comes
+# from the verified org_name claim
 # (type: authproperty, populated automatically by jwt-auth into
 # AuthContext.Properties -- same mechanism OrderManagementAPI-v1.0 uses),
 # NOT a plain header. Use-case identity is still a plain header
@@ -44,7 +45,7 @@ spec:
     - name: jwt-auth
       version: v1
       params:
-        issuers: ["asgardeo-railco"]
+        issuers: ["IS-railco", "IS-acme"]
         # No claimMappings -- advanced-ratelimit's authproperty keyExtraction
         # reads org_name straight from AuthContext.Properties, which
         # jwt-auth populates automatically for every non-standard claim on

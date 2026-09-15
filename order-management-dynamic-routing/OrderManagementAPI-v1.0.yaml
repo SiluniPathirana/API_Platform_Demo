@@ -16,9 +16,10 @@
 # the default upstream below — the SDK gives this policy no way to verify a
 # candidate name against upstreamDefinitions to do that safely.
 #
-# PROTECTED: jwt-auth verifies the caller's token against the WSO2 IS
-# instance (localhost:9444, see [policy_configurations.jwtauth_v1] in
-# config.toml). dynamic-routing reads org_id directly from the verified
+# PROTECTED: jwt-auth verifies the caller's token against either of two
+# WSO2 IS key managers (IS-railco, IS-acme -- see
+# [policy_configurations.jwtauth_v1] in config.toml). dynamic-routing reads
+# org_id directly from the verified
 # claim in AuthContext.Properties -- no claimMappings, no header at all.
 # The caller only ever sends Authorization; org identity comes purely from
 # the token. Requests without a valid token, or whose token has no org_id
@@ -40,9 +41,9 @@
 #   - mock-backends/mock-backend.js NAME=railco_backend PORT=7093
 #   - mock-backends/mock-backend.js NAME=acme_backend   PORT=7095
 #   - mock-backends/mock-backend.js NAME=default_backend PORT=7096
-#   - WSO2 IS instance on :9444 (asgardeo-railco key manager) -- a real,
-#     currently-valid access token with an org_id claim is required to call
-#     this API now; dummy bearer tokens are rejected by jwt-auth.
+#   - WSO2 IS instance on :9443 (IS-railco and IS-acme key managers) -- a
+#     real, currently-valid access token with an org_id claim is required
+#     to call this API now; dummy bearer tokens are rejected by jwt-auth.
 apiVersion: gateway.api-platform.wso2.com/v1
 kind: RestApi
 metadata:
@@ -65,7 +66,7 @@ spec:
     - name: jwt-auth
       version: v1
       params:
-        issuers: ["asgardeo-railco"]
+        issuers: ["IS-railco","IS-acme"]
         # No claimMappings -- dynamic-routing reads org_id straight from
         # AuthContext.Properties, which jwt-auth populates automatically
         # for every non-standard claim on a successfully verified token.
