@@ -1,0 +1,56 @@
+# API Portal manifest for AgentChatAPI-v1.0, per the "Mirror the API and
+# Plan into the Portal" step of:
+# https://wso2.com/api-platform/docs/api-portal/1.0.0/tutorials/secured-api-end-to-end/#step-5-mirror-the-api-and-plan-into-the-portal
+#
+# BEFORE PUBLISHING: this API is JWT-protected (jwt-auth) with per-org and
+# per-org-per-use-case token budgets (advanced-ratelimit), not
+# api-key-auth/subscription-validation like the tutorial's example -- so
+# `referenceId` below is a placeholder for whatever REST API id the
+# Platform API assigns when you register this API there. subscriptionPlans
+# is likewise a placeholder; drop it entirely if this API is meant to stay
+# JWT-only with no portal-issued subscription token.
+#
+# Publish:
+#   curl -sk -X POST https://localhost:9543/api-portal/api/v0.9/apis \
+#     -H "Authorization: Bearer $TOKEN" \
+#     -F "metadata=@api-portal/api.yaml;type=application/yaml" \
+#     -F "definition=@api-portal/definition.yaml;type=application/yaml"
+apiVersion: api-portal.api-platform.wso2.com/v1
+kind: RestApi
+
+metadata:
+  name: agent-chat-api-v1-0
+
+spec:
+  type: REST
+  displayName: AgentChatAPI
+  version: v1.0
+  description: >
+    Chat/completions API for the WK AI agent, with per-organization AND
+    per-organization-per-use-case token budgets enforced by token usage
+    (not just request count).
+  status: PUBLISHED
+  referenceId: REPLACE_WITH_PLATFORM_API_REST_API_ID
+
+  tags:
+    - agent
+    - rate-limiting
+    - multi-tenant
+
+  labels:
+    - default
+
+  subscriptionPlans:
+    - REPLACE_WITH_PLATFORM_API_PLAN_ID
+
+  agentVisibility: VISIBLE
+
+  businessInformation:
+    businessOwner: Platform Owner
+    businessOwnerEmail: support@example.com
+    technicalOwner: API Team
+    technicalOwnerEmail: architecture@example.com
+
+  endpoints:
+    sandboxUrl: http://localhost:8080/agent/v1.0
+    productionUrl: http://localhost:8080/agent/v1.0

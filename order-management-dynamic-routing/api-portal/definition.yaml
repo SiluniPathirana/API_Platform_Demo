@@ -1,0 +1,77 @@
+openapi: 3.0.1
+info:
+  title: Order Management API
+  version: v1.0
+  description: |
+    Place an order against your organization's own Order Management
+    backend. The gateway identifies your organization from the org_id/
+    org_name claim in your JWT, exchanges your token for a backend-specific
+    one, and routes the request to that organization's own backend.
+servers:
+  - url: http://localhost:8080/order-management/v1.0
+security:
+  - BearerAuth: []
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        A valid access token from the organization's own OAuth2
+        application (client_credentials) or a logged-in user
+        (authorization_code), issued by the org's WSO2 IS key manager.
+        Its org_id/org_name claim determines which backend the request
+        is routed to.
+  schemas:
+    Order:
+      type: object
+      required: [items]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        items:
+          type: array
+          items:
+            type: object
+            required: [sku, quantity]
+            properties:
+              sku:
+                type: string
+                example: SKU-12345
+              quantity:
+                type: integer
+                minimum: 1
+                example: 2
+        status:
+          type: string
+          enum: [pending, confirmed, shipped, delivered, cancelled]
+          readOnly: true
+paths:
+  /orders:
+    post:
+      summary: Place an order
+      description: >
+        Routed to the caller's own organization's order backend. Returns
+        502/503 if the org claim doesn't match any configured backend.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Order'
+      responses:
+        '200':
+          description: OK. The order was accepted by the org's backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          description: Unauthorized. Missing or invalid JWT.
+        '503':
+          description: >
+            No org identity found in the verified token (no org_id/
+            org_name claim).
