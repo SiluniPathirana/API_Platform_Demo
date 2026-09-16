@@ -1,0 +1,140 @@
+openapi: 3.0.1
+info:
+  title: Air Quality API
+  version: 1.0.0
+  description: |
+    Air Quality Index (AQI) readings and pollutant forecasts for a city or a
+    lat/lon pair.
+servers:
+  - url: /air-quality
+security:
+  - ApiKeyHeader: []
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    CurrentAqi:
+      type: object
+      properties:
+        location:
+          type: string
+          example: Colombo
+        aqi:
+          type: integer
+          description: Overall Air Quality Index (0-500, higher is worse).
+          example: 62
+        category:
+          type: string
+          enum: [Good, Moderate, "Unhealthy for Sensitive Groups", Unhealthy, "Very Unhealthy", Hazardous]
+          example: Moderate
+        pm25:
+          type: number
+          description: PM2.5 concentration in µg/m³.
+          example: 18.4
+        pm10:
+          type: number
+          description: PM10 concentration in µg/m³.
+          example: 32.1
+        observedAt:
+          type: string
+          format: date-time
+      required:
+        - location
+        - aqi
+        - category
+    AqiForecastDay:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        aqi:
+          type: integer
+        category:
+          type: string
+      required:
+        - date
+        - aqi
+        - category
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+      required:
+        - code
+        - message
+
+paths:
+  /aqi/current:
+    get:
+      summary: Get current AQI
+      description: Returns the current Air Quality Index for a named location or a lat/lon pair.
+      operationId: getCurrentAqi
+      tags:
+        - current
+      parameters:
+        - name: location
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: lat
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: lon
+          in: query
+          required: false
+          schema:
+            type: number
+      responses:
+        '200':
+          description: OK. Current AQI reading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAqi'
+        '400':
+          description: Bad Request. Neither location nor lat/lon supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /aqi/forecast:
+    get:
+      summary: Get AQI forecast
+      description: Returns a day-by-day AQI forecast for a named location.
+      operationId: getAqiForecast
+      tags:
+        - forecast
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: days
+          in: query
+          required: false
+          description: Number of days to forecast (default 3, max 7).
+          schema:
+            type: integer
+            default: 3
+      responses:
+        '200':
+          description: OK. Forecast days.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AqiForecastDay'

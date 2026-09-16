@@ -1,0 +1,58 @@
+# API Portal manifest for OrderManagementAPI-v1.0, per the "Mirror the API
+# and Plan into the Portal" step of:
+# https://wso2.com/api-platform/docs/api-portal/1.0.0/tutorials/secured-api-end-to-end/#step-5-mirror-the-api-and-plan-into-the-portal
+#
+# BEFORE PUBLISHING: this API is JWT-protected (jwt-auth), not
+# api-key-auth/subscription-validation like the tutorial's example -- so
+# `referenceId` below is a placeholder for whatever REST API id the
+# Platform API assigns when you register this API there (tutorial step 4,
+# adapted: use jwt-auth + dynamic-routing in the policies array instead of
+# api-key-auth/subscription-validation). subscriptionPlans is likewise a
+# placeholder for a real Platform API plan id, only needed if you want the
+# portal to track subscriptions for this API; drop the whole field if this
+# API is meant to be JWT-only with no portal-issued subscription token.
+#
+# Publish:
+#   curl -sk -X POST https://localhost:9543/api-portal/api/v0.9/apis \
+#     -H "Authorization: Bearer $TOKEN" \
+#     -F "metadata=@api-portal/api.yaml;type=application/yaml" \
+#     -F "definition=@api-portal/definition.yaml;type=application/yaml"
+apiVersion: api-portal.api-platform.wso2.com/v1
+kind: RestApi
+
+metadata:
+  name: order-management-api-v1-0
+
+spec:
+  type: REST
+  displayName: OrderManagementAPI
+  version: v1.0
+  description: >
+    Multi-tenant order management API. Each customer organization is
+    routed to its own Order Management backend after the caller's JWT is
+    verified and exchanged for a backend-specific token.
+  status: PUBLISHED
+  referenceId: order-management-api-v1-0
+
+  tags:
+    - order-management
+    - dynamic-routing
+    - multi-tenant
+
+  labels:
+    - default
+
+  subscriptionPlans:
+    - Bronze
+
+  agentVisibility: VISIBLE
+
+  businessInformation:
+    businessOwner: Platform Owner
+    businessOwnerEmail: support@example.com
+    technicalOwner: API Team
+    technicalOwnerEmail: architecture@example.com
+
+  endpoints:
+    sandboxUrl: http://localhost:8080/order-management/v1.0
+    productionUrl: http://localhost:8080/order-management/v1.0

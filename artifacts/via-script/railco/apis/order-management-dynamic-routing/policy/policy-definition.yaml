@@ -1,0 +1,25 @@
+name: dynamic-routing
+displayName: Dynamic Routing Policy
+version: v1.0.0
+description: Routes each request to the upstreamDefinitions entry named by the caller's org_id, read from the verified JWT claim (AuthContext.Properties -- requires jwt-auth or another auth policy earlier in the chain, no claimMappings needed). The caller's Authorization token is exchanged via an external service, the caller's original Authorization header is dropped, and the backend-specific token is sent to the backend in a separate header instead. No org_id claim, or no matching upstreamDefinitions entry, returns 503.
+
+parameters:
+  type: object
+  additionalProperties: false
+  properties:
+    orgIDClaim:
+      type: string
+      description: Name of the verified JWT claim (in AuthContext.Properties) that carries the caller's organization id.
+      default: "org_id"
+    exchangeServiceUrl:
+      type: string
+      description: URL of the token-exchange service, reachable from the gateway-runtime container.
+      default: "http://host.docker.internal:7099/exchange"
+    tokenField:
+      type: string
+      description: JSON field name in the exchange service's response that carries the backend-specific token.
+      default: "access_token"
+    backendTokenHeader:
+      type: string
+      description: Header the exchanged backend-specific token is sent to the backend in, as "Bearer <token>". The caller's original Authorization header is dropped before forwarding.
+      default: "X-Backend-Token"

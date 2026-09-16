@@ -1,0 +1,35 @@
+apiVersion: api-portal.api-platform.wso2.com/v1
+kind: MCP
+
+metadata:
+  name: weather-mcp-server-v1-0
+
+spec:
+  type: MCP
+  displayName: Weather MCP Server
+  version: v1.0
+  description: MCP proxy exposing current-conditions and forecast lookups as tools, backed by the Weather API.
+  status: PUBLISHED
+
+  tags:
+    - mcp
+    - weather
+    - ai-agent
+
+  labels:
+    - default
+
+  subscriptionPlans:
+    - Bronze
+
+  agentVisibility: VISIBLE
+
+  businessInformation:
+    businessOwner: Platform Owner
+    businessOwnerEmail: support@example.com
+    technicalOwner: API Team
+    technicalOwnerEmail: architecture@example.com
+
+  endpoints:
+    productionUrl: http://localhost:9090/mcp/weather
+    sandboxUrl: http://localhost:9090/mcp/weather
