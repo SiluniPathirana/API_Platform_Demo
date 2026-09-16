@@ -1,0 +1,291 @@
+{
+  "info": {
+    "name": "API Platform Demo - Gateway Management",
+    "description": "Create/update the two demo APIs directly against the gateway-controller's management REST API (port 9090, basic auth) -- separate from the main \"API Platform Demo\" collection, which invokes the APIs' business endpoints on the data-plane (port 8080).\n\nEach request's raw body is the exact same YAML deployed via docker exec / curl --data-binary in this project's READMEs, kept in sync with order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml and agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml. Edit the body directly in Postman to try changes, then use folder 2 to push them.\n\nFolder 1 (Create) only works the FIRST time -- rerunning it returns 409 Conflict since the API already exists. Folder 2 (Update) is idempotent -- rerun any time after editing a request's body.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway_mgmt_url",
+      "value": "http://localhost:9090"
+    },
+    {
+      "key": "admin_username",
+      "value": "admin"
+    },
+    {
+      "key": "admin_password",
+      "value": "admin"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create API",
+      "item": [
+        {
+          "name": "1a. Create OrderManagementAPI-v1.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201, 200]);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/yaml"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_username}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "# OrderManagementAPI-v1.0 \u2014 routes each customer's order request to their\n# own tenant-specific Order Management backend, and exchanges the caller's\n# own token for a backend-specific token via the tenant's token-exchange\n# service before dispatch. Uses the custom `dynamic-routing` policy\n# (policies/dynamic-routing), already compiled into this gateway's image \u2014\n# see docs/dynamic-routing-custom-policy.md for the policy's own design\n# notes. Renamed from DynamicRoutingAPI-v1.0 to reflect a real business\n# scenario: Railco and Acme are customer tenants, each with their own OMS.\n#\n# No orgUpstreamMap param below: org_id's raw value IS the\n# upstreamDefinitions entry name directly (see the entries named \"Railco\"\n# and \"Acme\" below) \u2014 a caller whose org_id claim is \"Railco\" routes\n# straight to the \"Railco\" upstreamDefinitions entry, no separate map.\n# Deliberate tradeoff: an org_id with no matching upstreamDefinitions entry\n# (e.g. a typo) gets a 502/503 from the kernel rather than falling back to\n# the default upstream below \u2014 the SDK gives this policy no way to verify a\n# candidate name against upstreamDefinitions to do that safely.\n#\n# PROTECTED: jwt-auth verifies the caller's token against either of two\n# WSO2 IS key managers (IS-railco, IS-acme -- see\n# [policy_configurations.jwtauth_v1] in config.toml), authenticating the\n# caller only. dynamic-routing reads org_id from the X-Org-Name request\n# header instead -- not any token claim. Requests without a valid token are\n# rejected by jwt-auth; requests with a valid token but no X-Org-Name header\n# are rejected by dynamic-routing itself (503).\n#\n# Deploy (create \u2014 first time):\n#   curl -X POST \"http://localhost:9090/api/management/v1/rest-apis\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/OrderManagementAPI-v1.0.yaml\n#\n# Update (subsequent changes):\n#   curl -X PUT \"http://localhost:9090/api/management/v1/rest-apis/OrderManagementAPI-v1.0\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/OrderManagementAPI-v1.0.yaml\n#\n# Requires (all already running from earlier work):\n#   - mock-services/wk-token-exchange-service.js   (PORT=7099)\n#   - mock-backends/mock-backend.js NAME=railco_backend PORT=7093\n#   - mock-backends/mock-backend.js NAME=acme_backend   PORT=7095\n#   - mock-backends/mock-backend.js NAME=default_backend PORT=7096\n#   - WSO2 IS instance on :9443 (IS-railco and IS-acme key managers) -- a\n#     real, currently-valid access token is still required (jwt-auth rejects\n#     dummy bearer tokens); the X-Org-Name header determines routing.\napiVersion: gateway.api-platform.wso2.com/v1\nkind: RestApi\nmetadata:\n  name: OrderManagementAPI-v1.0\nspec:\n  displayName: OrderManagementAPI\n  version: v1.0\n  context: /order-management/$version\n  upstream:\n    main:\n      url: http://77.112.16.220:7096   # default/fallback \u2014 used when org_id has no matching upstreamDefinitions entry\n  upstreamDefinitions:\n    - name: railco\n      upstreams:\n        - url: http://77.112.16.220:7093\n    - name: acme\n      upstreams:\n        - url: http://77.112.16.220:7095\n  policies:\n    - name: jwt-auth\n      version: v1\n      params:\n        issuers: [\"IS-railco\",\"IS-acme\"]\n    - name: dynamic-routing\n      version: v1\n      params:\n        # Name of the request header carrying the caller's org id.\n        # Config-only change, no rebuild needed.\n        orgIDHeader: \"X-Org-Name\"\n        exchangeServiceUrl: \"http://77.112.16.220:7099/exchange\"\n        # Header the exchanged backend-specific token is sent to the backend\n        # in, as \"Bearer <token>\". The caller's original Authorization header\n        # is dropped before forwarding -- the backend only ever sees this\n        # header, never the caller's own token. Config-only change, no\n        # rebuild needed.\n        backendTokenHeader: \"Backend-Token\"\n  operations:\n    - method: POST\n      path: /orders\n",
+              "options": {
+                "raw": {
+                  "language": "yaml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{gateway_mgmt_url}}/api/management/v1/rest-apis",
+              "host": [
+                "{{gateway_mgmt_url}}"
+              ],
+              "path": [
+                "api",
+                "management",
+                "v1",
+                "rest-apis"
+              ]
+            },
+            "description": "Creates OrderManagementAPI-v1.0 on the gateway-controller's management API. Fails with 409 if the API already exists -- use the Update request below instead."
+          }
+        },
+        {
+          "name": "1b. Create AgentChatAPI-v1.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201, 200]);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/yaml"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_username}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "# AgentChatAPI-v1.0 \u2014 per-org AND per-org-per-use-case token budgets for\n# calls to the WK AI agent, each an explicit, independently-configurable\n# quota (not a single generic auto-bucketed quota) via advanced-ratelimit's\n# match-gated keyExtraction. Renamed from TokenBasedThrottlingAPI-v1.0 to\n# reflect a real business scenario: rate-limiting chat/completion calls to\n# an LLM-style agent backend by customer org and by use-case, based on\n# actual token usage (not just request count).\n#\n# PROTECTED: jwt-auth verifies the caller's token against either of two\n# WSO2 IS key managers (IS-railco, IS-acme -- see\n# [policy_configurations.jwtauth_v1] in config.toml). Org identity for\n# rate-limit bucketing comes from the X-Org-Name request header (type:\n# header), NOT the verified JWT claim -- jwt-auth is used here purely to\n# authenticate the caller, not to establish org identity. Use-case\n# identity is likewise a plain header (X-Use-Case-Id).\n#\n# Each org has its own org-wide budget PLUS its own per-use-case budgets, all\n# checked independently \u2014 any one being exhausted blocks the call even if\n# the others still have room. Limit values below are demo placeholders; swap\n# in the real per-customer numbers when available.\n#\n# Deploy (create \u2014 first time):\n#   curl -X POST \"http://localhost:9090/api/management/v1/rest-apis\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/AgentChatAPI-v1.0.yaml\n#\n# Update (subsequent changes):\n#   curl -X PUT \"http://localhost:9090/api/management/v1/rest-apis/AgentChatAPI-v1.0\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/AgentChatAPI-v1.0.yaml\napiVersion: gateway.api-platform.wso2.com/v1\nkind: RestApi\nmetadata:\n  name: AgentChatAPI-v1.0\nspec:\n  displayName: AgentChatAPI\n  version: v1.0\n  context: /agent/$version\n  upstream:\n    main:\n      url: http://77.112.16.220:7094   # mock-backends/mock-agent-backend.js\n  policies:\n    - name: jwt-auth\n      version: v1\n      params:\n        issuers: [\"IS-railco\", \"IS-acme\"]\n    - name: advanced-ratelimit\n      version: v1\n      params:\n        quotas:\n          # ---- Railco ----\n          - name: railco-org-token-budget\n            limits:\n              - limit: 500\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^railco$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: railco-usecase1-token-budget\n            limits:\n              - limit: 200\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^railco$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase1$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: railco-usecase2-token-budget\n            limits:\n              - limit: 100\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^railco$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase2$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          # ---- Acme ----\n          - name: acme-org-token-budget\n            limits:\n              - limit: 150\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^acme$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: acme-usecase1-token-budget\n            limits:\n              - limit: 50\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^acme$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase1$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: acme-usecase2-token-budget\n            limits:\n              - limit: 70\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^acme$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase2$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n  operations:\n    - method: POST\n      path: /chat/completions\n",
+              "options": {
+                "raw": {
+                  "language": "yaml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{gateway_mgmt_url}}/api/management/v1/rest-apis",
+              "host": [
+                "{{gateway_mgmt_url}}"
+              ],
+              "path": [
+                "api",
+                "management",
+                "v1",
+                "rest-apis"
+              ]
+            },
+            "description": "Creates AgentChatAPI-v1.0 on the gateway-controller's management API. Fails with 409 if the API already exists -- use the Update request below instead."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Update API",
+      "item": [
+        {
+          "name": "2a. Update OrderManagementAPI-v1.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/yaml"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_username}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "# OrderManagementAPI-v1.0 \u2014 routes each customer's order request to their\n# own tenant-specific Order Management backend, and exchanges the caller's\n# own token for a backend-specific token via the tenant's token-exchange\n# service before dispatch. Uses the custom `dynamic-routing` policy\n# (policies/dynamic-routing), already compiled into this gateway's image \u2014\n# see docs/dynamic-routing-custom-policy.md for the policy's own design\n# notes. Renamed from DynamicRoutingAPI-v1.0 to reflect a real business\n# scenario: Railco and Acme are customer tenants, each with their own OMS.\n#\n# No orgUpstreamMap param below: org_id's raw value IS the\n# upstreamDefinitions entry name directly (see the entries named \"Railco\"\n# and \"Acme\" below) \u2014 a caller whose org_id claim is \"Railco\" routes\n# straight to the \"Railco\" upstreamDefinitions entry, no separate map.\n# Deliberate tradeoff: an org_id with no matching upstreamDefinitions entry\n# (e.g. a typo) gets a 502/503 from the kernel rather than falling back to\n# the default upstream below \u2014 the SDK gives this policy no way to verify a\n# candidate name against upstreamDefinitions to do that safely.\n#\n# PROTECTED: jwt-auth verifies the caller's token against either of two\n# WSO2 IS key managers (IS-railco, IS-acme -- see\n# [policy_configurations.jwtauth_v1] in config.toml), authenticating the\n# caller only. dynamic-routing reads org_id from the X-Org-Name request\n# header instead -- not any token claim. Requests without a valid token are\n# rejected by jwt-auth; requests with a valid token but no X-Org-Name header\n# are rejected by dynamic-routing itself (503).\n#\n# Deploy (create \u2014 first time):\n#   curl -X POST \"http://localhost:9090/api/management/v1/rest-apis\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/OrderManagementAPI-v1.0.yaml\n#\n# Update (subsequent changes):\n#   curl -X PUT \"http://localhost:9090/api/management/v1/rest-apis/OrderManagementAPI-v1.0\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/OrderManagementAPI-v1.0.yaml\n#\n# Requires (all already running from earlier work):\n#   - mock-services/wk-token-exchange-service.js   (PORT=7099)\n#   - mock-backends/mock-backend.js NAME=railco_backend PORT=7093\n#   - mock-backends/mock-backend.js NAME=acme_backend   PORT=7095\n#   - mock-backends/mock-backend.js NAME=default_backend PORT=7096\n#   - WSO2 IS instance on :9443 (IS-railco and IS-acme key managers) -- a\n#     real, currently-valid access token is still required (jwt-auth rejects\n#     dummy bearer tokens); the X-Org-Name header determines routing.\napiVersion: gateway.api-platform.wso2.com/v1\nkind: RestApi\nmetadata:\n  name: OrderManagementAPI-v1.0\nspec:\n  displayName: OrderManagementAPI\n  version: v1.0\n  context: /order-management/$version\n  upstream:\n    main:\n      url: http://77.112.16.220:7096   # default/fallback \u2014 used when org_id has no matching upstreamDefinitions entry\n  upstreamDefinitions:\n    - name: railco\n      upstreams:\n        - url: http://77.112.16.220:7093\n    - name: acme\n      upstreams:\n        - url: http://77.112.16.220:7095\n  policies:\n    - name: jwt-auth\n      version: v1\n      params:\n        issuers: [\"IS-railco\",\"IS-acme\"]\n    - name: dynamic-routing\n      version: v1\n      params:\n        # Name of the request header carrying the caller's org id.\n        # Config-only change, no rebuild needed.\n        orgIDHeader: \"X-Org-Name\"\n        exchangeServiceUrl: \"http://77.112.16.220:7099/exchange\"\n        # Header the exchanged backend-specific token is sent to the backend\n        # in, as \"Bearer <token>\". The caller's original Authorization header\n        # is dropped before forwarding -- the backend only ever sees this\n        # header, never the caller's own token. Config-only change, no\n        # rebuild needed.\n        backendTokenHeader: \"Backend-Token\"\n  operations:\n    - method: POST\n      path: /orders\n",
+              "options": {
+                "raw": {
+                  "language": "yaml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{gateway_mgmt_url}}/api/management/v1/rest-apis/OrderManagementAPI-v1.0",
+              "host": [
+                "{{gateway_mgmt_url}}"
+              ],
+              "path": [
+                "api",
+                "management",
+                "v1",
+                "rest-apis",
+                "OrderManagementAPI-v1.0"
+              ]
+            },
+            "description": "Updates OrderManagementAPI-v1.0 on the gateway-controller's management API. Fails with 404 if the API has not been created yet -- run the Create request first."
+          }
+        },
+        {
+          "name": "2b. Update AgentChatAPI-v1.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/yaml"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_username}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "# AgentChatAPI-v1.0 \u2014 per-org AND per-org-per-use-case token budgets for\n# calls to the WK AI agent, each an explicit, independently-configurable\n# quota (not a single generic auto-bucketed quota) via advanced-ratelimit's\n# match-gated keyExtraction. Renamed from TokenBasedThrottlingAPI-v1.0 to\n# reflect a real business scenario: rate-limiting chat/completion calls to\n# an LLM-style agent backend by customer org and by use-case, based on\n# actual token usage (not just request count).\n#\n# PROTECTED: jwt-auth verifies the caller's token against either of two\n# WSO2 IS key managers (IS-railco, IS-acme -- see\n# [policy_configurations.jwtauth_v1] in config.toml). Org identity for\n# rate-limit bucketing comes from the X-Org-Name request header (type:\n# header), NOT the verified JWT claim -- jwt-auth is used here purely to\n# authenticate the caller, not to establish org identity. Use-case\n# identity is likewise a plain header (X-Use-Case-Id).\n#\n# Each org has its own org-wide budget PLUS its own per-use-case budgets, all\n# checked independently \u2014 any one being exhausted blocks the call even if\n# the others still have room. Limit values below are demo placeholders; swap\n# in the real per-customer numbers when available.\n#\n# Deploy (create \u2014 first time):\n#   curl -X POST \"http://localhost:9090/api/management/v1/rest-apis\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/AgentChatAPI-v1.0.yaml\n#\n# Update (subsequent changes):\n#   curl -X PUT \"http://localhost:9090/api/management/v1/rest-apis/AgentChatAPI-v1.0\" \\\n#     -u \"admin:admin\" -H \"Content-Type: application/yaml\" \\\n#     --data-binary @configs/AgentChatAPI-v1.0.yaml\napiVersion: gateway.api-platform.wso2.com/v1\nkind: RestApi\nmetadata:\n  name: AgentChatAPI-v1.0\nspec:\n  displayName: AgentChatAPI\n  version: v1.0\n  context: /agent/$version\n  upstream:\n    main:\n      url: http://77.112.16.220:7094   # mock-backends/mock-agent-backend.js\n  policies:\n    - name: jwt-auth\n      version: v1\n      params:\n        issuers: [\"IS-railco\", \"IS-acme\"]\n    - name: advanced-ratelimit\n      version: v1\n      params:\n        quotas:\n          # ---- Railco ----\n          - name: railco-org-token-budget\n            limits:\n              - limit: 500\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^railco$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: railco-usecase1-token-budget\n            limits:\n              - limit: 200\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^railco$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase1$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: railco-usecase2-token-budget\n            limits:\n              - limit: 100\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^railco$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase2$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          # ---- Acme ----\n          - name: acme-org-token-budget\n            limits:\n              - limit: 150\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^acme$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: acme-usecase1-token-budget\n            limits:\n              - limit: 50\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^acme$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase1$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n\n          - name: acme-usecase2-token-budget\n            limits:\n              - limit: 70\n                duration: \"1m\"\n            keyExtraction:\n              - type: header\n                key: X-Org-Name\n                match: { type: regex, value: \"^acme$\" }\n              - type: header\n                key: X-Use-Case-Id\n                match: { type: regex, value: \"^usecase2$\" }\n            costExtraction:\n              enabled: true\n              sources:\n                - type: response_header\n                  key: X-Completion-Tokens\n              default: 10\n  operations:\n    - method: POST\n      path: /chat/completions\n",
+              "options": {
+                "raw": {
+                  "language": "yaml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{gateway_mgmt_url}}/api/management/v1/rest-apis/AgentChatAPI-v1.0",
+              "host": [
+                "{{gateway_mgmt_url}}"
+              ],
+              "path": [
+                "api",
+                "management",
+                "v1",
+                "rest-apis",
+                "AgentChatAPI-v1.0"
+              ]
+            },
+            "description": "Updates AgentChatAPI-v1.0 on the gateway-controller's management API. Fails with 404 if the API has not been created yet -- run the Create request first."
+          }
+        }
+      ]
+    }
+  ]
+}
