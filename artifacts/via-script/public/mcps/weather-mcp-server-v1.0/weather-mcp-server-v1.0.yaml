@@ -1,0 +1,71 @@
+# weather-mcp-server-v1.0 — gateway-deployable MCP proxy for the Weather MCP
+# Server bundle. This is the GATEWAY half of the bundle (runtime route + tool
+# surface); api-portal/ alongside it is the PORTAL half (catalog metadata +
+# the tool list the portal renders). Neither reads the other.
+#
+# The tool set here mirrors api-portal/definition.yaml, re-expressed in the
+# gateway's own shape: MCPTool.inputSchema is a STRING holding a JSON Schema
+# document (see MCPTool in gateway-controller/api/management-openapi.yaml),
+# not a nested YAML mapping as in the portal definition.
+#
+# DUMMY UPSTREAM: no real MCP server ships with this bundle, so upstream.url
+# below points at a placeholder port that nothing listens on. The proxy
+# deploys and lists its tools, but an actual tools/call will fail to connect
+# until a real MCP server is put behind it. Swap upstream.url for the real
+# server's address when there is one.
+#
+# Deploy (create — first time):
+#   curl -X POST "http://localhost:9090/api/management/v1/mcp-proxies" \
+#     -u "admin:admin" -H "Content-Type: text/yaml" \
+#     --data-binary @weather-mcp-server-v1.0.yaml
+#
+# Update (subsequent changes):
+#   curl -X PUT "http://localhost:9090/api/management/v1/mcp-proxies/weather-mcp-server-v1.0" \
+#     -u "admin:admin" -H "Content-Type: text/yaml" \
+#     --data-binary @weather-mcp-server-v1.0.yaml
+apiVersion: gateway.api-platform.wso2.com/v1
+kind: Mcp
+metadata:
+  name: weather-mcp-server-v1.0
+spec:
+  displayName: Weather MCP Server
+  version: v1.0
+  context: /mcp/weather
+  specVersion: "2025-06-18"
+  upstream:
+    url: http://host.docker.internal:7102   # dummy — no real weather MCP server ships with this bundle
+  tools:
+    - name: getCurrentWeather
+      title: Get Current Weather
+      description: Get the current weather conditions for a named location.
+      inputSchema: |
+        {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "City name, e.g. \"Colombo\""
+            }
+          },
+          "required": ["location"]
+        }
+    - name: getForecast
+      title: Get Forecast
+      description: Get a multi-day weather forecast for a named location.
+      inputSchema: |
+        {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "City name, e.g. \"Colombo\""
+            },
+            "days": {
+              "type": "integer",
+              "description": "Number of days to forecast (default 3, max 10)",
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          "required": ["location"]
+        }

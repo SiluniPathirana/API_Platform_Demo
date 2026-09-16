@@ -4,21 +4,48 @@ A walkthrough of the WSO2 API Platform end to end: APIs land in the gateway, get
 
 ## Prerequisites
 
-- WSO2 IS is configured with the root service provider.
-- The following APIs are already deployed to the gateway:
+This demo assumes the platform is already set up and the `public` catalog is already seeded. Before
+starting, the following must be true:
 
-  | Type | Handle |
-  |---|---|
-  | REST | `agent-chat-rate-limiting` |
-  | REST | `air-quality-api-v1.0` |
-  | REST | `weather-api-v1.0` |
-  | MCP | `geo-mcp-server-v1.0` |
-  | MCP | `weather-mcp-server-v1.0` |
+- WSO2 IS is configured with the root service provider (`scripts/setup_idp.sh` has been run), and you
+  have its `ROOT_APP_CLIENT_ID` / `ROOT_APP_CLIENT_SECRET` / `ROOT_APP_ID`.
+- The `public` org is onboarded, and you have `publicadmin`'s password.
+- The gateway holds the `public` catalog, and the API Publisher has discovered it:
 
-- The API Publisher has already discovered these deployed APIs.
-- You have on hand:
-  - the root app's `client_id` / `client_secret` / app id
-  - the `public` org's admin username/password
+  | Type | Gateway artifact | Context |
+  |---|---|---|
+  | REST | `AgentChatAPI-v1.0` | `/agent/v1.0` |
+  | REST | `AirQualityAPI-v1.0` | `/air-quality` |
+  | REST | `WeatherAPI-v1.0` | `/weather` |
+  | MCP | `geo-mcp-server-v1.0` | `/mcp/geo` |
+  | MCP | `weather-mcp-server-v1.0` | `/mcp/weather` |
+
+- You know the `WEBHOOK_SECRET` — it must equal the subscription-mediator's own `SM_WEBHOOK_SECRET`.
+
+### Endpoints
+
+| | URL |
+|---|---|
+| WSO2 IS | https://is.wso2.com:9444 |
+| API Manager (Publisher/Admin) | https://am.wso2.com:9443 |
+| Developer Portal | https://api-portal.wso2.com:9543 |
+| Gateway — traffic | https://platform.gw.wso2.com:8443 |
+| Gateway — management | http://platform.gw.wso2.com:9090 |
+
+Both Postman collections already default to these. Every TLS endpoint is self-signed, so turn
+**Settings → General → SSL certificate verification OFF** in Postman, and pass `-k` to curl. The
+`/etc/hosts` entries for these hostnames must exist on the machine running the demo.
+
+### The bundle this demo deploys
+
+`artifacts/manual/order-management-dynamic-routing/` — the one bundle deliberately left out of the
+scripted seeding, so it can be added by hand while the audience watches. Like every bundle here it has
+two independent halves, and an API needs both to be usable:
+
+- the **gateway** half — `OrderManagementAPI-v1.0.yaml` at the bundle root, which makes it routable
+  (Step 1);
+- the **portal** half — `api-portal/api.yaml` + `api-portal/definition.yaml`, which makes it
+  discoverable and subscribable (Step 2).
 
 ---
 
@@ -27,14 +54,20 @@ A walkthrough of the WSO2 API Platform end to end: APIs land in the gateway, get
 1. Open the **API Publisher** (https://am.wso2.com:9443/publisher). It shows every API already deployed to the gateway.
 2. Open the Developer Portal's **`public`** org (https://api-portal.wso2.com:9543/api-portal/public/views/default/). It shows the same APIs and MCP servers, already published.
 
-## Step 2: Add a new API live
+## Step 2: Add the OrderManagement API live
 
 3. Deploy another REST API, `order-management-dynamic-routing`, to the gateway via the Gateway REST API.
 
-   > **Postman:** *(steps to be filled in)*
+> **Postman:** `API-Platform-Demo-Gateway-Management-Postman-Collection.json` →
+> `2. Deploy OrderManagementAPI > 2a. Create OrderManagementAPI-v1.0`.
+>
+> The request body is the verbatim contents of
+> `artifacts/manual/order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml`. If the API already
+> exists the create returns `409` — use `3f. Update OrderManagementAPI-v1.0` instead.
 
 4. Back in the **API Publisher**, the newly deployed REST API now shows up there too.
-5. Publish that same REST API into the Developer Portal's `public` org.
+
+5. Publish it into the Developer Portal's `public` org
 
    Get an admin token for the `public` org:
 
@@ -47,25 +80,31 @@ A walkthrough of the WSO2 API Platform end to end: APIs land in the gateway, get
      ROOT_APP_CLIENT_SECRET=*** \
      ROOT_APP_ID=*** \
      ./scripts/get-org-token.sh)
+   echo "$TOKEN"
    ```
 
-   Publish the API to the Developer Portal's `public` org:
+   This is a *user* token carrying the `dp_admin` role.
 
-   > **Postman:** *(steps to be filled in)*
+   > **Postman:** `API-Platform-Demo-Postman-Collection.json` →
+   > `2. API Portal - Publish OrderManagementAPI > 2a. Publish OrderManagementAPI to the public org`.
+   >
+   > Paste `$TOKEN` into the `portal_access_token` collection variable first. The request uploads two
+   > files off disk, so point Postman's working directory (Settings → General) at this
+   > `API_Platform_Demo` folder and allow access to files outside it; if the file boxes on the Body
+   > tab look empty, re-select the two files by hand.
 
-6. Back in the Developer Portal's `public` org this REST API now shows
-   up there too.
+6. Back in the Developer Portal's `public` org, this REST API now shows up there too.
 
 ## Step 3: Onboard the `acme` org
 
 1. Run the tenant onboarding script against `acme`. It:
-   - Creates the `acme` organization in WSO2 IS
-   - Onboards `acme`'s users
-   - Creates `acme`'s key manager
-   - Register webhook subscriber to deliver subscription events to the gateway
-   - Publishes `acme`'s APIs and MCP servers
+   - Creates the `acme` organization in WSO2 IS and shares the root app to it
+   - Onboards `acme`'s users (`acmeadmin` / `acmeuser`)
+   - Creates `acme`'s own OAuth2 client and wires it up as `acme`'s key manager
+   - Registers the webhook subscriber that delivers subscription events to the gateway
+   - Publishes `acme`'s APIs and MCP servers into its own portal catalog
 
-    To onboard the tenant, run the following script with relevant parameters.
+   To onboard the tenant, run the following script with relevant parameters.
 
    ```bash
    ORG_NAME=acme \
@@ -75,11 +114,14 @@ A walkthrough of the WSO2 API Platform end to end: APIs land in the gateway, get
    ROOT_APP_CLIENT_ID=*** \
    ROOT_APP_CLIENT_SECRET=*** \
    ROOT_APP_ID=*** \
+   WEBHOOK_SECRET='***' \
    ./scripts/onboard-tenant.sh
    ```
 
-   **Note:** Copy down, from the script's output: `acme`'s client id/secret, its
-   users' usernames/passwords, and the token-endpoint curl example.
+   `WEBHOOK_SECRET` must equal the mediator's `SM_WEBHOOK_SECRET`.
+
+   **Note:** Copy down, from the script's output: `acme`'s client id/secret, and its users'
+   usernames/passwords.
 
 2. Log in to the Developer Portal's `acme` org using the copied
    username/password. It shows only `acme`'s own catalog.
@@ -90,54 +132,134 @@ A walkthrough of the WSO2 API Platform end to end: APIs land in the gateway, get
 
 ## Step 4: Repeat for `railco`
 
-Repeat Phase 3 in full, substituting `ORG_NAME=railco SAMPLE_DIR=railco`.
+Repeat Step 3 in full, substituting `ORG_NAME=railco SAMPLE_DIR=railco`.
 
-## Step 5: Test OrderManagementAPI and AgentChatAPI
+## Step 5: Subscribe, then invoke
 
-Exercise both demo APIs end to end using the **`API-Platform-Demo-Postman-Collection.json`** collection at the repo root. Before invoking either API, generate an access token for each org's client app -- both APIs authenticate the caller via jwt-auth, and route/rate-limit using the `X-Org-Name` header rather than any token claim, so a token from either org works against either API as long as the header is set correctly.
+### Subscribe, as each org
+
+1. Log in to the Developer Portal's `acme` org using the copied username/password. It shows only
+   `acme`'s own catalog.
+2. Create an application, subscribe it to **OrderManagementAPI** and **AgentChatAPI**, and copy each
+   subscription's key — the portal shows it once.
+3. Repeat for `railco`.
+
+### What each call must send
+
+Both demo APIs are protected by three policies, and all three have to be satisfied:
+
+| Policy | What the caller must send |
+|---|---|
+| `jwt-auth` | `Authorization: Bearer <token>` from the org's own key-manager client |
+| `subscription-validation` | `Subscription-Key: <key>` from the portal subscription above |
+| `dynamic-routing` (OrderManagementAPI) | `X-Org-Name: railco` \| `acme` — a **request header** |
+| `advanced-ratelimit` (AgentChatAPI) | `X-Use-Case-Id: <use case>` header; the org bucket comes from the token's **`org_name` claim** |
+
+### Fill in the collection variables
+
+In `API-Platform-Demo-Postman-Collection.json`:
+
+| Variable | Where it comes from |
+|---|---|
+| `railco_client_id` / `railco_client_secret` | `railco`'s onboarding output (Step 4) |
+| `acme_client_id` / `acme_client_secret` | `acme`'s onboarding output (Step 3) |
+| `railco_order_management_subscription_key` | portal subscription, railco → OrderManagementAPI |
+| `acme_order_management_subscription_key` | portal subscription, acme → OrderManagementAPI |
+| `railco_agent_chat_subscription_key` | portal subscription, railco → AgentChatAPI |
+| `acme_agent_chat_subscription_key` | portal subscription, acme → AgentChatAPI |
 
 ### Generate access tokens
 
 1. Generate a token for `railco`'s client app (fill in `railco_client_id` / `railco_client_secret` in the collection variables first).
 
-   > **Postman:** `1. OrderManagementAPI - Dynamic Routing > 1a. Generate Token - Railco (Client Credentials)`
+   > **Postman:** `3. OrderManagementAPI - Dynamic Routing > 1a. Generate Token - Railco (Client Credentials)`
 
 2. Generate a token for `acme`'s client app (fill in `acme_client_id` / `acme_client_secret` first).
 
-   > **Postman:** `1. OrderManagementAPI - Dynamic Routing > 1b. Generate Token - Acme (Client Credentials)`
+   > **Postman:** `3. OrderManagementAPI - Dynamic Routing > 1b. Generate Token - Acme (Client Credentials)`
 
-### Test OrderManagementAPI
+### Invoke OrderManagementAPI
 
 3. Invoke OrderManagementAPI as `railco` -- routes to Railco's own order backend via dynamic-routing.
 
-   > **Postman:** `1. OrderManagementAPI - Dynamic Routing > 2a. Invoke OrderManagementAPI - Railco`
+   > **Postman:** `3. OrderManagementAPI - Dynamic Routing > 2a. Invoke OrderManagementAPI - Railco`
 
 4. Invoke OrderManagementAPI as `acme` -- routes to Acme's own order backend.
 
-   > **Postman:** `1. OrderManagementAPI - Dynamic Routing > 2b. Invoke OrderManagementAPI - Acme`
+   > **Postman:** `3. OrderManagementAPI - Dynamic Routing > 2b. Invoke OrderManagementAPI - Acme`
 
-### Test AgentChatAPI
+### Invoke AgentChatAPI
 
 5. Exhaust `railco`'s `usecase1` token budget -- click Send 5 times; the 5th call is blocked with `429`.
 
-   > **Postman:** `2. AgentChatAPI - Token Rate Limiting > 1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)`
+   > **Postman:** `4. AgentChatAPI - Token Rate Limiting > 1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)`
 
 6. Exhaust `railco`'s `usecase2` token budget -- click Send 3 times; the 3rd call is blocked with `429`.
 
-   > **Postman:** `2. AgentChatAPI - Token Rate Limiting > 2. Railco usecase2 (run 3x -- 1-2 succeed, 3rd blocked at 429)`
+   > **Postman:** `4. AgentChatAPI - Token Rate Limiting > 2. Railco usecase2 (run 3x -- 1-2 succeed, 3rd blocked at 429)`
 
 7. Confirm `railco`'s org-wide budget still has room for a different use-case, even with both named use-cases above exhausted.
 
-   > **Postman:** `2. AgentChatAPI - Token Rate Limiting > 3. Railco org quota STILL has room (different use-case, after 1+2 exhausted)`
+   > **Postman:** `4. AgentChatAPI - Token Rate Limiting > 3. Railco org quota STILL has room (different use-case, after 1+2 exhausted)`
 
 8. Exhaust `acme`'s `usecase1` token budget -- click Send twice; the 2nd call is blocked with `429`.
 
-   > **Postman:** `2. AgentChatAPI - Token Rate Limiting > 4. Acme usecase1 (run 2x -- 1st succeeds, 2nd blocked at 429)`
+   > **Postman:** `4. AgentChatAPI - Token Rate Limiting > 4. Acme usecase1 (run 2x -- 1st succeeds, 2nd blocked at 429)`
 
 9. Exhaust `acme`'s `usecase2` token budget -- click Send 3 times; the 3rd call is blocked with `429`.
 
-   > **Postman:** `2. AgentChatAPI - Token Rate Limiting > 5. Acme usecase2 (run 3x -- 1-2 succeed, 3rd blocked at 429)`
+   > **Postman:** `4. AgentChatAPI - Token Rate Limiting > 5. Acme usecase2 (run 3x -- 1-2 succeed, 3rd blocked at 429)`
 
 10. Confirm `acme`'s org-wide budget is ALSO exhausted for a different use-case -- unlike `railco` in step 7, Acme's per-use-case limits happen to sum exactly to its org limit, so there's no room left.
 
-    > **Postman:** `2. AgentChatAPI - Token Rate Limiting > 6. Acme org quota ALSO exhausted (different use-case, after 4+5 exhausted -- unlike Railco)`
+    > **Postman:** `4. AgentChatAPI - Token Rate Limiting > 6. Acme org quota ALSO exhausted (different use-case, after 4+5 exhausted -- unlike Railco)`
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `401` from any demo API | No/expired `Authorization` token, or the token was issued by a key manager the API's `jwt-auth` `issuers` list doesn't name (`IS-railco`, `IS-acme`) |
+| `403` from any demo API | Missing/wrong `Subscription-Key`, or the subscription never reached the gateway — check `WEBHOOK_SECRET` matches the mediator's `SM_WEBHOOK_SECRET` |
+| `503` from OrderManagementAPI | No `X-Org-Name` header, or its value names no `upstreamDefinitions` entry (only `railco` and `acme` exist; there is deliberately no fallback) |
+| `502` from OrderManagementAPI | The mock backend for that org isn't running — see the prerequisites table |
+| AgentChatAPI never returns `429` | The token has no `org_name` claim, so no org quota matches. The `X-Org-Name` header does not help here |
+| Postman multipart upload sends nothing | Working directory not set, or the file reference went stale — re-select the files on the Body tab |
+| `409 Conflict` on any Create request | Already deployed; use the matching Update request |
+
+**Known inconsistency.** The comment block in
+`artifacts/manual/order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml` (and its
+`via-script/acme`, `via-script/railco` copies) says `dynamic-routing` reads `org_id` "directly from the
+verified claim in AuthContext.Properties -- no claimMappings, no header at all". The policy source in
+`order-management-dynamic-routing/policy/dynamic_routing.go` does the opposite: it reads the request
+header named by the `orgIDHeader` param, and returns `503` when that header is absent. The config
+(`orgIDHeader: "X-Org-Name"`) and the Postman requests both match the code; only the prose comment is
+stale.
+
+## Starting over
+
+```bash
+ORG_NAME=acme \
+IS_URL=https://is.wso2.com:9444 \
+API_PORTAL_URL=https://api-portal.wso2.com:9543 \
+ROOT_APP_CLIENT_ID=*** ROOT_APP_CLIENT_SECRET=*** ROOT_APP_ID=*** \
+./scripts/cleanup-tenant.sh
+```
+
+Deletes the org's subscriptions, applications, portal APIs/MCPs, and the org itself in IS. It is
+destructive and prompts for nothing. It does **not** remove anything from the gateway — use the
+management API's `DELETE /rest-apis/{name}` for that.
+
+WSO2 IS does not free a deleted organization's name, so re-onboarding needs a new `ORG_NAME` with
+`SAMPLE_DIR` still pointing at the original bundle: `ORG_NAME=acme-demo SAMPLE_DIR=acme`.
+
+## Also in the collections
+
+`API-Platform-Demo-Postman-Collection.json` folder `1. API Manager - DCR & admin token` registers the
+DCR application and exchanges it for an admin token (`{{apim_access_token}}`) for API Manager's own
+REST APIs. Nothing in this demo needs it — it is there for driving the Publisher/Admin APIs directly.
+
+`API-Platform-Demo-Gateway-Management-Postman-Collection.json` folder
+`1. Seed the public catalog (prerequisite)` deploys the five prerequisite artifacts, for rebuilding an
+environment from scratch. `./scripts/seed-gateway.sh` does the same from the command line.

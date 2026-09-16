@@ -18,9 +18,10 @@
 # under the License.
 # --------------------------------------------------------------------
 
-# Deploys one tenant's gateway API definitions (the RestApi YAMLs that live at
-# the root of each artifacts/via-script/<org>/apis/<bundle>/ directory) into a
-# running WSO2 API Platform gateway, via its management API.
+# Deploys one tenant's gateway definitions (the RestApi and Mcp YAMLs that live
+# at the root of each artifacts/via-script/<org>/apis/<bundle>/ and
+# .../mcps/<bundle>/ directory) into a running WSO2 API Platform gateway, via
+# its management API.
 #
 # This is the GATEWAY half of a tenant's catalog — the runtime routes, policies
 # and upstreams. seed-samples.sh (driven by onboard-tenant.sh) seeds the
@@ -28,17 +29,24 @@
 # independent: neither reads the other's files, and either can be run alone.
 #
 # Which files get deployed: every *.yaml sitting directly inside
-# artifacts/via-script/$ORG/apis/*/ (one level down, so the api-portal/ and
-# mock-services/ subdirectories are never picked up) whose `kind:` is RestApi.
-# For the default ORG=public that is exactly:
+# artifacts/via-script/$ORG/apis/*/ or artifacts/via-script/$ORG/mcps/*/ (one
+# level down, so the api-portal/ and mock-services/ subdirectories are never
+# picked up) whose `kind:` is RestApi or Mcp. Each kind goes to its own
+# management collection:
+#   kind: RestApi  ->  POST/PUT $GW_MGMT_BASE/rest-apis
+#   kind: Mcp      ->  POST/PUT $GW_MGMT_BASE/mcp-proxies
+# Any other kind is skipped when scanning a directory, and rejected when named
+# explicitly on the command line. For the default ORG=public that is exactly:
 #   - apis/agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml
 #   - apis/air-quality-api-v1.0/AirQualityAPI-v1.0.yaml
 #   - apis/weather-api-v1.0/WeatherAPI-v1.0.yaml
+#   - mcps/geo-mcp-server-v1.0/geo-mcp-server-v1.0.yaml
+#   - mcps/weather-mcp-server-v1.0/weather-mcp-server-v1.0.yaml
 # and for acme/railco it additionally picks up OrderManagementAPI-v1.0.yaml.
 # Pass explicit file paths as arguments to deploy just those instead.
 #
 # Usage:
-#   ./scripts/seed-gateway.sh                        # all of public's gateway APIs
+#   ./scripts/seed-gateway.sh                        # all of public's gateway artifacts
 #   ORG=acme ./scripts/seed-gateway.sh               # all of acme's
 #   ./scripts/seed-gateway.sh path/to/SomeAPI.yaml   # just these files
 #
@@ -84,23 +92,50 @@ command -v curl >/dev/null 2>&1 || fail "curl is required but not found on PATH.
 
 # --- Which YAMLs to deploy ---------------------------------------------------
 
+# The management API keeps each kind in its own collection, so the collection a
+# file is sent to is derived from its own `kind:` rather than from which
+# directory it was found in — a bundle that grows a second artifact of the
+# other kind then needs no change here. An unrecognised kind returns empty,
+# which is what marks a YAML as "not a gateway definition".
+collection_for() {
+    local kind
+    kind=$(awk '
+        /^kind:[[:space:]]*/ {
+            sub(/^kind:[[:space:]]*/, "")
+            gsub(/["'"'"']/, ""); sub(/[[:space:]]+$/, "")
+            print; exit
+        }' "$1")
+    case "$kind" in
+        RestApi) echo "rest-apis" ;;
+        Mcp)     echo "mcp-proxies" ;;
+        *)       echo "" ;;
+    esac
+}
+
 FILES=()
 if [ "$#" -gt 0 ]; then
     for f in "$@"; do
         [ -f "$f" ] || fail "no such file: $f"
+        # Named explicitly, so an unsupported kind is a mistake worth stopping
+        # for — silently skipping it would look like a successful deploy.
+        [ -n "$(collection_for "$f")" ] || fail "$f is not a gateway definition (its 'kind:' is neither RestApi nor Mcp)."
         FILES+=("$f")
     done
 else
-    ORG_APIS_DIR="$ARTIFACTS_ROOT/$ORG/apis"
-    [ -d "$ORG_APIS_DIR" ] || fail "no apis directory for org '$ORG' at $ORG_APIS_DIR (available: $(ls -1 "$ARTIFACTS_ROOT" 2>/dev/null | tr '\n' ' '))"
+    ORG_DIR="$ARTIFACTS_ROOT/$ORG"
+    [ -d "$ORG_DIR" ] || fail "no artifact directory for org '$ORG' at $ORG_DIR (available: $(ls -1 "$ARTIFACTS_ROOT" 2>/dev/null | tr '\n' ' '))"
+    [ -d "$ORG_DIR/apis" ] || [ -d "$ORG_DIR/mcps" ] || fail "org '$ORG' has neither an apis/ nor an mcps/ directory at $ORG_DIR."
     # Only one level down: api-portal/ and mock-services/ subdirectories hold
     # portal metadata and mock backends, neither of which the gateway accepts.
-    # `kind: RestApi` is then what distinguishes a gateway definition from any
-    # other stray YAML a bundle might grow later.
-    while IFS= read -r f; do
-        grep -qE '^kind:[[:space:]]*RestApi[[:space:]]*$' "$f" && FILES+=("$f")
-    done < <(find "$ORG_APIS_DIR" -mindepth 2 -maxdepth 2 -name '*.yaml' | sort)
-    [ "${#FILES[@]}" -gt 0 ] || fail "no gateway RestApi YAMLs found under $ORG_APIS_DIR."
+    # `kind:` is then what distinguishes a gateway definition from any other
+    # stray YAML a bundle might grow later.
+    for subdir in apis mcps; do
+        [ -d "$ORG_DIR/$subdir" ] || continue
+        while IFS= read -r f; do
+            [ -n "$(collection_for "$f")" ] && FILES+=("$f")
+        done < <(find "$ORG_DIR/$subdir" -mindepth 2 -maxdepth 2 -name '*.yaml' | sort)
+    done
+    [ "${#FILES[@]}" -gt 0 ] || fail "no gateway RestApi/Mcp YAMLs found under $ORG_DIR/{apis,mcps}."
 fi
 
 # metadata.name is the id the management API addresses an API by — the PUT
@@ -123,12 +158,12 @@ log "Gateway: ${C_BOLD}$GW_MGMT_URL$GW_MGMT_BASE${C_RESET}"
 if [ "$#" -gt 0 ]; then
     log "Deploying ${#FILES[@]} file(s) given on the command line ..."
 else
-    log "Deploying org '${C_BOLD}$ORG${C_RESET}''s ${#FILES[@]} gateway API(s) ..."
+    log "Deploying org '${C_BOLD}$ORG${C_RESET}''s ${#FILES[@]} gateway artifact(s) ..."
 fi
 
 if [ -n "${DRY_RUN:-}" ]; then
     for f in "${FILES[@]}"; do
-        echo "  $(api_name_from "$f")  ${C_DIM}${f#$PROJECT_DIR/}${C_RESET}"
+        echo "  $(api_name_from "$f")  ${C_DIM}-> $(collection_for "$f")  ${f#$PROJECT_DIR/}${C_RESET}"
     done
     log "DRY_RUN set — nothing was deployed."
     exit 0
@@ -144,11 +179,12 @@ fi
 deploy_one() {
     local file="$1"
     local name; name=$(api_name_from "$file")
+    local coll; coll=$(collection_for "$file")
     local body_file="/tmp/seed-gateway-$$.out"
     local status
 
     status=$(curl -s -o "$body_file" -w "%{http_code}" -m 60 \
-        -u "$GW_USER:$GW_PASS" -X POST "$GW_MGMT_URL$GW_MGMT_BASE/rest-apis" \
+        -u "$GW_USER:$GW_PASS" -X POST "$GW_MGMT_URL$GW_MGMT_BASE/$coll" \
         -H "Content-Type: text/yaml" --data-binary "@$file")
     local body; body=$(cat "$body_file")
 
@@ -174,7 +210,7 @@ deploy_one() {
     esac
 
     status=$(curl -s -o "$body_file" -w "%{http_code}" -m 60 \
-        -u "$GW_USER:$GW_PASS" -X PUT "$GW_MGMT_URL$GW_MGMT_BASE/rest-apis/$name" \
+        -u "$GW_USER:$GW_PASS" -X PUT "$GW_MGMT_URL$GW_MGMT_BASE/$coll/$name" \
         -H "Content-Type: text/yaml" --data-binary "@$file")
     body=$(cat "$body_file"); rm -f "$body_file"
     case "$status" in
@@ -190,13 +226,20 @@ done
 # --- Report what the gateway holds now ---------------------------------------
 
 echo
-DEPLOYED=$(curl -s -m 30 -u "$GW_USER:$GW_PASS" "$GW_MGMT_URL$GW_MGMT_BASE/rest-apis" || true)
-if command -v jq >/dev/null 2>&1 && printf '%s' "$DEPLOYED" | jq -e . >/dev/null 2>&1; then
-    log "${C_GREEN}${C_BOLD}Done.${C_RESET} APIs now deployed on this gateway:"
-    printf '%s' "$DEPLOYED" | jq -r '
-        (.apis // .list // .data // [])[]
-        | "  - \(.name // .metadata.name // .id // "?")"
-          + (if (.context // .spec.context) then "  \(.context // .spec.context)" else "" end)'
-else
-    log "${C_GREEN}${C_BOLD}Done.${C_RESET} Gateway listing: $DEPLOYED"
-fi
+log "${C_GREEN}${C_BOLD}Done.${C_RESET} Deployed on this gateway now:"
+# Listed per collection — REST APIs and MCP proxies are separate resources on
+# the management API, and a run that touched only one of them still prints
+# both, so the output shows the gateway's whole state rather than just what
+# this invocation happened to send.
+for coll in rest-apis mcp-proxies; do
+    DEPLOYED=$(curl -s -m 30 -u "$GW_USER:$GW_PASS" "$GW_MGMT_URL$GW_MGMT_BASE/$coll" || true)
+    if command -v jq >/dev/null 2>&1 && printf '%s' "$DEPLOYED" | jq -e . >/dev/null 2>&1; then
+        echo "  ${C_BOLD}$coll${C_RESET}"
+        printf '%s' "$DEPLOYED" | jq -r '
+            (.apis // .mcps // .list // .data // [])[]
+            | "    - \(.name // .metadata.name // .id // "?")"
+              + (if (.context // .spec.context) then "  \(.context // .spec.context)" else "" end)'
+    else
+        echo "  ${C_BOLD}$coll${C_RESET}: $DEPLOYED"
+    fi
+done

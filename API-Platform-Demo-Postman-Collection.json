@@ -1,23 +1,358 @@
 {
   "info": {
     "name": "API Platform Demo",
-    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected via jwt-auth. In both folders, jwt-auth only authenticates the caller's bearer token -- org identity for routing/rate-limiting comes from the X-Org-Name header, not any JWT claim. Folder 1: OrderManagementAPI (header-based dynamic routing + token exchange). Folder 2: AgentChatAPI (header-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nRun '1a' (Railco) and/or '1b' (Acme) to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
+    "description": "The WSO2 API Platform demo, end to end. Folders 1-2 set up and publish; folders 3-4 exercise the two demo APIs on the gateway.\n\n* **Folder 1 - API Manager DCR & admin token.** Registers the DCR application and exchanges it for an admin token ({{apim_access_token}}).\n* **Folder 2 - API Portal publish.** Mirrors OrderManagementAPI into the Developer Portal's `public` org (README step 2.5). Deploy it to the gateway first, with the \"API Platform Demo - Gateway Management\" collection.\n* **Folder 3 - OrderManagementAPI.** Header-based dynamic routing + token exchange.\n* **Folder 4 - AgentChatAPI.** Header-based, per-org AND per-org-per-use-case token-based rate limiting.\n\nIn folders 3 and 4, jwt-auth only authenticates the caller's bearer token -- org identity for routing/rate-limiting comes from the X-Org-Name header, not any JWT claim.\n\nRun '1a' (Railco) and/or '1b' (Acme) in folder 3 to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently.\n\nNOTE: every TLS endpoint here (IS, API Manager, the portal) is self-signed or has an expired cert -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise these requests fail with a TLS error.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "gateway_base_url", "value": "http://localhost:8080" },
-    { "key": "railco_is_base_url", "value": "https://localhost:9444" },
-    { "key": "railco_client_id", "value": "REPLACE_WITH_RAILCO_CLIENT_ID" },
-    { "key": "railco_client_secret", "value": "REPLACE_WITH_RAILCO_CLIENT_SECRET" },
-    { "key": "acme_is_base_url", "value": "https://localhost:9444" },
-    { "key": "acme_client_id", "value": "REPLACE_WITH_ACME_CLIENT_ID" },
-    { "key": "acme_client_secret", "value": "REPLACE_WITH_ACME_CLIENT_SECRET" },
-    { "key": "railco_access_token", "value": "" },
-    { "key": "acme_access_token", "value": "" }
+    {
+      "key": "gateway_base_url",
+      "value": "https://platform.gw.wso2.com:8443"
+    },
+    {
+      "key": "railco_is_base_url",
+      "value": "https://is.wso2.com:9444"
+    },
+    {
+      "key": "railco_client_id",
+      "value": "REPLACE_WITH_RAILCO_CLIENT_ID"
+    },
+    {
+      "key": "railco_client_secret",
+      "value": "REPLACE_WITH_RAILCO_CLIENT_SECRET"
+    },
+    {
+      "key": "acme_is_base_url",
+      "value": "https://is.wso2.com:9444"
+    },
+    {
+      "key": "acme_client_id",
+      "value": "REPLACE_WITH_ACME_CLIENT_ID"
+    },
+    {
+      "key": "acme_client_secret",
+      "value": "REPLACE_WITH_ACME_CLIENT_SECRET"
+    },
+    {
+      "key": "railco_access_token",
+      "value": ""
+    },
+    {
+      "key": "acme_access_token",
+      "value": ""
+    },
+    {
+      "key": "apim_base_url",
+      "value": "https://am.wso2.com:9443"
+    },
+    {
+      "key": "apim_username",
+      "value": "admin"
+    },
+    {
+      "key": "apim_password",
+      "value": "admin"
+    },
+    {
+      "key": "apim_client_id",
+      "value": ""
+    },
+    {
+      "key": "apim_client_secret",
+      "value": ""
+    },
+    {
+      "key": "apim_access_token",
+      "value": ""
+    },
+    {
+      "key": "api_portal_base_url",
+      "value": "https://api-portal.wso2.com:9543"
+    },
+    {
+      "key": "platform_api_base_url",
+      "value": "https://platform-api.wso2.com:9243"
+    },
+    {
+      "key": "portal_access_token",
+      "value": ""
+    },
+    {
+      "key": "portal_order_management_api_id",
+      "value": ""
+    },
+    {
+      "key": "railco_order_management_subscription_key",
+      "value": "REPLACE_WITH_RAILCO_ORDERMGMT_SUBSCRIPTION_KEY"
+    },
+    {
+      "key": "acme_order_management_subscription_key",
+      "value": "REPLACE_WITH_ACME_ORDERMGMT_SUBSCRIPTION_KEY"
+    },
+    {
+      "key": "railco_agent_chat_subscription_key",
+      "value": "REPLACE_WITH_RAILCO_AGENTCHAT_SUBSCRIPTION_KEY"
+    },
+    {
+      "key": "acme_agent_chat_subscription_key",
+      "value": "REPLACE_WITH_ACME_AGENTCHAT_SUBSCRIPTION_KEY"
+    }
   ],
   "item": [
     {
-      "name": "1. OrderManagementAPI - Dynamic Routing",
+      "name": "1. API Manager - DCR & admin token",
+      "description": "Registers the Dynamic Client Registration application API Manager needs, then exchanges it for an admin access token. Run 1a then 1b once per API Manager restart -- 1a saves {{apim_client_id}}/{{apim_client_secret}}, 1b saves {{apim_access_token}}, and anything calling an API Manager REST API downstream picks the token up from there.\n\nPorted verbatim (endpoints, body, scopes) from the WK Demo collection's \"02 - API Manager - DCR & token\" folder; only the variable names differ, to match this collection's `<component>_<thing>` convention.",
+      "item": [
+        {
+          "name": "1a. Register DCR application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData.clientId) {",
+                  "    pm.collectionVariables.set(\"apim_client_id\", jsonData.clientId);",
+                  "}",
+                  "if (jsonData.clientSecret) {",
+                  "    pm.collectionVariables.set(\"apim_client_secret\", jsonData.clientSecret);",
+                  "}",
+                  "pm.test(\"clientId returned\", function () {",
+                  "    pm.expect(jsonData.clientId).to.be.a(\"string\");",
+                  "});",
+                  "console.log(\"apim_client_id =\", pm.collectionVariables.get(\"apim_client_id\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{apim_username}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apim_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callbackUrl\": \"https://localhost/callback\",\n  \"clientName\": \"publisher_app\",\n  \"owner\": \"{{apim_username}}\",\n  \"grantType\": \"password refresh_token client_credentials\",\n  \"saasApp\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{apim_base_url}}/client-registration/v0.17/register",
+              "host": [
+                "{{apim_base_url}}"
+              ],
+              "path": [
+                "client-registration",
+                "v0.17",
+                "register"
+              ]
+            },
+            "description": "Registers the `publisher_app` DCR application on API Manager, authenticating with the API Manager admin's own basic credentials ({{apim_username}}/{{apim_password}}).\n\nRe-running this is safe: API Manager returns the SAME clientId/clientSecret for a clientName that is already registered, so the test script just re-saves them.\n\nEquivalent curl:\n  curl -sk -X POST \"$APIM/client-registration/v0.17/register\" \\\n    -u \"$APIM_USER:$APIM_PASS\" -H 'Content-Type: application/json' \\\n    -d '{\"callbackUrl\":\"https://localhost/callback\",\"clientName\":\"publisher_app\",\"owner\":\"admin\",\"grantType\":\"password refresh_token client_credentials\",\"saasApp\":true}'"
+          },
+          "protocolProfileBehavior": {
+            "strictSSL": false,
+            "followRedirects": true
+          }
+        },
+        {
+          "name": "1b. Get admin access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData.access_token) {",
+                  "    pm.collectionVariables.set(\"apim_access_token\", jsonData.access_token);",
+                  "    console.log(\"Saved API Manager admin token to apim_access_token.\");",
+                  "} else {",
+                  "    console.error(\"No access_token in response:\", jsonData);",
+                  "}",
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response has access_token\", function () {",
+                  "    pm.expect(jsonData.access_token).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{apim_client_id}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apim_client_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{apim_username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apim_password}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "apim:admin apim:api_view apim:api_create apim:api_publish apim:api_manage",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{apim_base_url}}/oauth2/token",
+              "host": [
+                "{{apim_base_url}}"
+              ],
+              "path": [
+                "oauth2",
+                "token"
+              ]
+            },
+            "description": "Exchanges the DCR app's {{apim_client_id}}/{{apim_client_secret}} (saved by 1a) for an admin access token, via the password grant with the API Manager admin scopes. Saved into {{apim_access_token}}.\n\nRun 1a first -- without it the basic-auth credentials on this request are empty and API Manager answers 401."
+          },
+          "protocolProfileBehavior": {
+            "strictSSL": false,
+            "followRedirects": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. API Portal - Publish OrderManagementAPI",
+      "description": "README step 2.5: mirrors the freshly-deployed OrderManagementAPI into the Developer Portal's `public` org, so it shows up in the portal catalog alongside the APIs seeded there earlier.\n\n**Before you run this:**\n\n1. Deploy the API to the gateway first -- \"API Platform Demo - Gateway Management\" collection, folder 2.\n2. Mint a `public`-org admin token and paste it into the {{portal_access_token}} variable:\n\n```\nTOKEN=$(ORG_NAME=public ORG_USERNAME=publicadmin ORG_PASSWORD='***' \\\n  IS_URL=https://is.wso2.com:9444 \\\n  ROOT_APP_CLIENT_ID=*** ROOT_APP_CLIENT_SECRET=*** ROOT_APP_ID=*** \\\n  ./scripts/get-org-token.sh)\n```\n\n   (The portal's own local-auth login, `POST {{platform_api_base_url}}/api/portal/v0.9/auth/login`, returns a root-org token -- fine for a root-org catalog, not for publishing into `public`.)\n3. Postman must be able to read the two YAML files off disk: Settings > General > Working directory, point it at this API_Platform_Demo folder and allow access to files outside it. If the file boxes on the Body tab show up empty, re-select the files there by hand -- Postman stores the path, not the contents.",
+      "item": [
+        {
+          "name": "2a. Publish OrderManagementAPI to the public org",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Published (or already present)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "    console.log(\"Already published to this org -- nothing to do.\");",
+                  "} else if (pm.response.code < 300) {",
+                  "    const jsonData = pm.response.json();",
+                  "    if (jsonData.id) {",
+                  "        pm.collectionVariables.set(\"portal_order_management_api_id\", jsonData.id);",
+                  "        console.log(\"Portal API id:\", jsonData.id);",
+                  "    }",
+                  "}",
+                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
+                  "console.log(\"Body:\", pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{portal_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "metadata",
+                  "type": "file",
+                  "src": "artifacts/manual/order-management-dynamic-routing/api-portal/api.yaml",
+                  "contentType": "application/yaml",
+                  "description": "Portal manifest (kind: RestApi, apiVersion api-portal.api-platform.wso2.com/v1). The part's filename MUST be api.yaml -- the portal validates it against an allow-list."
+                },
+                {
+                  "key": "definition",
+                  "type": "file",
+                  "src": "artifacts/manual/order-management-dynamic-routing/api-portal/definition.yaml",
+                  "contentType": "application/octet-stream",
+                  "description": "The OpenAPI 3.0 document the portal renders as the API's reference docs."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{api_portal_base_url}}/api-portal/api/v0.9/apis",
+              "host": [
+                "{{api_portal_base_url}}"
+              ],
+              "path": [
+                "api-portal",
+                "api",
+                "v0.9",
+                "apis"
+              ]
+            },
+            "description": "Multipart POST of artifacts/manual/order-management-dynamic-routing/api-portal/{api.yaml, definition.yaml} -- the same two parts ./scripts/seed-samples.sh uploads for every other bundle, done by hand for the one API the demo adds live.\n\n409 means it is already in this org's catalog; the test treats that as a pass.\n\nEquivalent curl:\n  curl -sk -X POST \"$API_PORTAL_URL/api-portal/api/v0.9/apis\" \\\n    -H \"Authorization: Bearer $TOKEN\" \\\n    -F \"metadata=@artifacts/manual/order-management-dynamic-routing/api-portal/api.yaml;filename=api.yaml;type=application/yaml\" \\\n    -F \"definition=@artifacts/manual/order-management-dynamic-routing/api-portal/definition.yaml;type=application/octet-stream\"\n\nAfterwards, open the Developer Portal's `public` org (https://api-portal.wso2.com:9543/api-portal/public/views/default/) -- OrderManagementAPI is now listed there."
+          },
+          "protocolProfileBehavior": {
+            "strictSSL": false,
+            "followRedirects": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. OrderManagementAPI - Dynamic Routing",
       "item": [
         {
           "name": "1a. Generate Token - Railco (Client Credentials)",
@@ -47,25 +382,45 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
             ],
             "auth": {
               "type": "basic",
               "basic": [
-                { "key": "username", "value": "{{railco_client_id}}", "type": "string" },
-                { "key": "password", "value": "{{railco_client_secret}}", "type": "string" }
+                {
+                  "key": "username",
+                  "value": "{{railco_client_id}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{railco_client_secret}}",
+                  "type": "string"
+                }
               ]
             },
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                { "key": "grant_type", "value": "client_credentials", "type": "text" }
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                }
               ]
             },
             "url": {
               "raw": "{{railco_is_base_url}}/oauth2/token",
-              "host": ["{{railco_is_base_url}}"],
-              "path": ["oauth2", "token"]
+              "host": [
+                "{{railco_is_base_url}}"
+              ],
+              "path": [
+                "oauth2",
+                "token"
+              ]
             },
             "description": "Requests an application-level access token using Railco's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{railco_is_base_url}} in case Railco is served by a different IS instance/tenant than Acme). Fill in railco_client_id / railco_client_secret / railco_is_base_url in the collection variables first. On success, the test script saves access_token into {{railco_access_token}} -- a separate variable from Acme's, so both tokens can be held at once and every Railco-specific request below explicitly uses this one. This token only authenticates the caller; org identity for routing comes from the X-Org-Name header set explicitly on the downstream requests, not from any claim on this token."
           }
@@ -98,25 +453,45 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
             ],
             "auth": {
               "type": "basic",
               "basic": [
-                { "key": "username", "value": "{{acme_client_id}}", "type": "string" },
-                { "key": "password", "value": "{{acme_client_secret}}", "type": "string" }
+                {
+                  "key": "username",
+                  "value": "{{acme_client_id}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{acme_client_secret}}",
+                  "type": "string"
+                }
               ]
             },
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                { "key": "grant_type", "value": "client_credentials", "type": "text" }
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                }
               ]
             },
             "url": {
               "raw": "{{acme_is_base_url}}/oauth2/token",
-              "host": ["{{acme_is_base_url}}"],
-              "path": ["oauth2", "token"]
+              "host": [
+                "{{acme_is_base_url}}"
+              ],
+              "path": [
+                "oauth2",
+                "token"
+              ]
             },
             "description": "Requests an application-level access token using Acme's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{acme_is_base_url}} in case Acme is served by a different IS instance/tenant than Railco). Fill in acme_client_id / acme_client_secret / acme_is_base_url in the collection variables first. On success, the test script saves access_token into {{acme_access_token}} -- a separate variable from Railco's, so both tokens can be held at once and every Acme-specific request below explicitly uses this one. This token only authenticates the caller; org identity for routing comes from the X-Org-Name header set explicitly on the downstream requests, not from any claim on this token."
           }
@@ -141,24 +516,49 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "railco" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "railco"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{railco_order_management_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{railco_access_token}}", "type": "string" }
+                {
+                  "key": "token",
+                  "value": "{{railco_access_token}}",
+                  "type": "string"
+                }
               ]
             },
             "body": {
               "mode": "raw",
               "raw": "{}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{gateway_base_url}}/order-management/v1.0/orders",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["order-management", "v1.0", "orders"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "order-management",
+                "v1.0",
+                "orders"
+              ]
             },
             "description": "Calls OrderManagementAPI-v1.0 using {{railco_access_token}} (run request 1a first). jwt-auth verifies the token, then dynamic-routing reads org identity from the X-Org-Name header (not the token) and routes to the matching upstreamDefinitions entry (\"railco\"). An X-Org-Name value with no matching upstreamDefinitions entry returns 502/503 by design (no fallback map configured); a missing X-Org-Name header returns 503 directly from dynamic-routing."
           }
@@ -183,24 +583,49 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "acme" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "acme"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{acme_order_management_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{acme_access_token}}", "type": "string" }
+                {
+                  "key": "token",
+                  "value": "{{acme_access_token}}",
+                  "type": "string"
+                }
               ]
             },
             "body": {
               "mode": "raw",
               "raw": "{}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{gateway_base_url}}/order-management/v1.0/orders",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["order-management", "v1.0", "orders"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "order-management",
+                "v1.0",
+                "orders"
+              ]
             },
             "description": "Calls OrderManagementAPI-v1.0 using {{acme_access_token}} (run request 1b first). jwt-auth verifies the token, then dynamic-routing reads org identity from the X-Org-Name header (not the token) and routes to the matching upstreamDefinitions entry (\"acme\"). An X-Org-Name value with no matching upstreamDefinitions entry returns 502/503 by design (no fallback map configured); a missing X-Org-Name header returns 503 directly from dynamic-routing."
           }
@@ -208,8 +633,8 @@
       ]
     },
     {
-      "name": "2. AgentChatAPI - Token Rate Limiting",
-      "description": "Requests 1-3 are Railco-specific ({{railco_access_token}}, run folder 1's request 1a first); requests 4-6 are the Acme equivalents ({{acme_access_token}}, run request 1b first). Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50). Limits -- Railco: org=500/min, usecase1=200/min, usecase2=100/min. Acme: org=150/min, usecase1=50/min, usecase2=70/min. Requests 3 and 6 make the SAME point with OPPOSITE outcomes: after both named use-case quotas are exhausted, Railco's org budget still has room (200 left of 500) but Acme's is also fully exhausted (150 of 150 consumed) -- whether the org budget survives depends entirely on how the numbers relate to each other.",
+      "name": "4. AgentChatAPI - Token Rate Limiting",
+      "description": "Requests 1-3 are Railco-specific ({{railco_access_token}}, run folder 3's request 1a first); requests 4-6 are the Acme equivalents ({{acme_access_token}}, run request 1b first). Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50). Limits -- Railco: org=500/min, usecase1=200/min, usecase2=100/min. Acme: org=150/min, usecase1=50/min, usecase2=70/min.\n\nIMPORTANT -- which input picks the rate-limit bucket. The deployed artifacts/via-script/*/apis/agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml keys its org quotas on `type: authproperty, key: org_name` -- the **org_name claim on the verified token**, NOT the X-Org-Name header (an earlier revision of this API did use the header; that is what the X-Org-Name header on these requests is left over from). Only X-Use-Case-Id is still a plain header. So a token whose org_name claim is missing or wrong lands in no org bucket at all and the 429s never appear, however the X-Org-Name header is set. OrderManagementAPI in folder 3 is the opposite: its dynamic-routing policy genuinely reads the X-Org-Name header.",
       "item": [
         {
           "name": "1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)",
@@ -230,19 +655,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "railco" },
-              { "key": "X-Use-Case-Id", "value": "usecase1" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "railco"
+              },
+              {
+                "key": "X-Use-Case-Id",
+                "value": "usecase1"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{railco_agent_chat_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{railco_access_token}}", "type": "string" } ]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{railco_access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["agent", "v1.0", "chat", "completions"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "agent",
+                "v1.0",
+                "chat",
+                "completions"
+              ]
             },
             "description": "Consumes railco-usecase1-token-budget (200/min) AND railco-org-token-budget (500/min) simultaneously, since org quota has no use-case filter and matches every Railco call. At 50 tokens/call: usecase1 alone allows 4 calls before the 5th is blocked (429, x-ratelimit-quota: railco-usecase1-token-budget) -- click Send 5 times in a row to see it happen."
           },
@@ -267,19 +727,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "railco" },
-              { "key": "X-Use-Case-Id", "value": "usecase2" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "railco"
+              },
+              {
+                "key": "X-Use-Case-Id",
+                "value": "usecase2"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{railco_agent_chat_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{railco_access_token}}", "type": "string" } ]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{railco_access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["agent", "v1.0", "chat", "completions"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "agent",
+                "v1.0",
+                "chat",
+                "completions"
+              ]
             },
             "description": "Consumes railco-usecase2-token-budget (100/min) AND railco-org-token-budget simultaneously. At 50 tokens/call: usecase2 alone allows 2 calls before the 3rd is blocked (429, x-ratelimit-quota: railco-usecase2-token-budget) -- click Send 3 times in a row to see it happen. After running this AND request 1 above to full exhaustion, the org budget has consumed 200 (usecase1) + 100 (usecase2) = 300 of its 500 total -- 200 still remaining, proven by request 3 below."
           },
@@ -307,19 +802,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "railco" },
-              { "key": "X-Use-Case-Id", "value": "usecase-onboarding" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "railco"
+              },
+              {
+                "key": "X-Use-Case-Id",
+                "value": "usecase-onboarding"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{railco_agent_chat_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{railco_access_token}}", "type": "string" } ]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{railco_access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["agent", "v1.0", "chat", "completions"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "agent",
+                "v1.0",
+                "chat",
+                "completions"
+              ]
             },
             "description": "THE DEMO POINT: X-Use-Case-Id here is \"usecase-onboarding\" -- a use-case with NO dedicated quota configured, so only railco-org-token-budget (500/min) applies to this call, not any per-use-case limit. Run this AFTER exhausting requests 1 and 2 above (usecase1 and usecase2 both individually blocked at 429). This call still succeeds with 200, proving the org-wide budget still has room (500 - 200 - 100 = 200 remaining) even though both specific use-case quotas are maxed out -- org and use-case budgets are independent, and a 3rd/other use-case is only ever gated by the org-wide ceiling."
           },
@@ -344,19 +874,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "acme" },
-              { "key": "X-Use-Case-Id", "value": "usecase1" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "acme"
+              },
+              {
+                "key": "X-Use-Case-Id",
+                "value": "usecase1"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{acme_agent_chat_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{acme_access_token}}", "type": "string" } ]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{acme_access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["agent", "v1.0", "chat", "completions"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "agent",
+                "v1.0",
+                "chat",
+                "completions"
+              ]
             },
             "description": "Consumes acme-usecase1-token-budget (50/min) AND acme-org-token-budget (150/min) simultaneously. At 50 tokens/call, acme-usecase1's limit (50) is consumed in a single call -- the 1st call succeeds (pre-check 0<50), the 2nd is blocked immediately (pre-check 50 not<50, 429, x-ratelimit-quota: acme-usecase1-token-budget) -- click Send twice to see it happen."
           },
@@ -381,19 +946,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "acme" },
-              { "key": "X-Use-Case-Id", "value": "usecase2" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "acme"
+              },
+              {
+                "key": "X-Use-Case-Id",
+                "value": "usecase2"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{acme_agent_chat_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{acme_access_token}}", "type": "string" } ]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{acme_access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["agent", "v1.0", "chat", "completions"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "agent",
+                "v1.0",
+                "chat",
+                "completions"
+              ]
             },
             "description": "Consumes acme-usecase2-token-budget (70/min) AND acme-org-token-budget simultaneously. At 50 tokens/call: call 1 pre-checks 0<70 (allowed, running total becomes 50), call 2 pre-checks 50<70 (still allowed even though the next deduction overshoots the nominal 70 limit -- running total becomes 100), call 3 pre-checks 100<70 -- false, blocked (429, x-ratelimit-quota: acme-usecase2-token-budget). Click Send 3 times to see it happen. After running this AND request 4 above to full exhaustion, the org budget has consumed 50 (usecase1) + 100 (usecase2) = 150 of its 150 total -- fully exhausted, unlike Railco's org budget which still had room. See request 6 below."
           },
@@ -421,19 +1021,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Org-Name", "value": "acme" },
-              { "key": "X-Use-Case-Id", "value": "usecase-onboarding" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Org-Name",
+                "value": "acme"
+              },
+              {
+                "key": "X-Use-Case-Id",
+                "value": "usecase-onboarding"
+              },
+              {
+                "key": "Subscription-Key",
+                "value": "{{acme_agent_chat_subscription_key}}",
+                "description": "Required by the subscription-validation policy on the deployed API. Copy it from the Developer Portal when you subscribe this org's application to the API -- the portal shows it once."
+              }
             ],
             "auth": {
               "type": "bearer",
-              "bearer": [ { "key": "token", "value": "{{acme_access_token}}", "type": "string" } ]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{acme_access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{gateway_base_url}}/agent/v1.0/chat/completions",
-              "host": ["{{gateway_base_url}}"],
-              "path": ["agent", "v1.0", "chat", "completions"]
+              "host": [
+                "{{gateway_base_url}}"
+              ],
+              "path": [
+                "agent",
+                "v1.0",
+                "chat",
+                "completions"
+              ]
             },
             "description": "THE CONTRASTING DEMO POINT: unlike request 3 (Railco), this one is expected to return 429, not 200. Acme's usecase1 (50) + usecase2 (70, but only 100 actually consumed before blocking) budgets happen to sum to exactly Acme's org budget (150) -- 50 + 100 = 150. So once both named use-case quotas are individually exhausted, acme-org-token-budget is ALSO fully consumed, and this different/unnamed use-case gets blocked too (429, x-ratelimit-quota: acme-org-token-budget). Run this AFTER exhausting requests 4 and 5 above. This is a deliberate contrast with Railco (request 3): whether the org budget still has headroom after every named use-case is exhausted depends entirely on how the numbers are configured relative to each other -- it is not guaranteed, and Acme's current limits happen to leave zero room."
           },
