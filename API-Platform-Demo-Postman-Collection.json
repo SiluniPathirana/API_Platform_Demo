@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "API Platform Demo",
-    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected with org identity read from the verified org_name claim (not a header). Folder 1: OrderManagementAPI (claim-based dynamic routing + token exchange). Folder 2: AgentChatAPI (claim-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nRun '1a' (Railco) and/or '1b' (Acme) to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
+    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected via jwt-auth. Folder 1: OrderManagementAPI -- org identity read from the verified org_name claim (not a header), used for claim-based dynamic routing + token exchange. Folder 2: AgentChatAPI -- jwt-auth authenticates the caller, but org identity for per-org AND per-org-per-use-case token-based rate limiting comes from the X-Org-Name header, not the JWT claim.\n\nRun '1a' (Railco) and/or '1b' (Acme) to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -229,6 +229,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "railco" },
               { "key": "X-Use-Case-Id", "value": "usecase1" }
             ],
             "auth": {
@@ -265,6 +266,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "railco" },
               { "key": "X-Use-Case-Id", "value": "usecase2" }
             ],
             "auth": {
@@ -304,6 +306,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "railco" },
               { "key": "X-Use-Case-Id", "value": "usecase-onboarding" }
             ],
             "auth": {
@@ -340,6 +343,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "acme" },
               { "key": "X-Use-Case-Id", "value": "usecase1" }
             ],
             "auth": {
@@ -376,6 +380,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "acme" },
               { "key": "X-Use-Case-Id", "value": "usecase2" }
             ],
             "auth": {
@@ -415,6 +420,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "acme" },
               { "key": "X-Use-Case-Id", "value": "usecase-onboarding" }
             ],
             "auth": {
