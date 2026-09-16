@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "API Platform Demo",
-    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected via jwt-auth. Folder 1: OrderManagementAPI -- org identity read from the verified org_name claim (not a header), used for claim-based dynamic routing + token exchange. Folder 2: AgentChatAPI -- jwt-auth authenticates the caller, but org identity for per-org AND per-org-per-use-case token-based rate limiting comes from the X-Org-Name header, not the JWT claim.\n\nRun '1a' (Railco) and/or '1b' (Acme) to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
+    "description": "Two demo APIs on the WSO2 API Platform Gateway, both JWT-protected via jwt-auth. In both folders, jwt-auth only authenticates the caller's bearer token -- org identity for routing/rate-limiting comes from the X-Org-Name header, not any JWT claim. Folder 1: OrderManagementAPI (header-based dynamic routing + token exchange). Folder 2: AgentChatAPI (header-based, per-org AND per-org-per-use-case token-based rate limiting).\n\nRun '1a' (Railco) and/or '1b' (Acme) to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently. NOTE: the IS instance's TLS cert is expired/self-signed -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise the token requests will fail with a TLS error.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -67,7 +67,7 @@
               "host": ["{{railco_is_base_url}}"],
               "path": ["oauth2", "token"]
             },
-            "description": "Requests an application-level access token using Railco's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{railco_is_base_url}} in case Railco is served by a different IS instance/tenant than Acme). Fill in railco_client_id / railco_client_secret / railco_is_base_url in the collection variables first. On success, the test script saves access_token into {{railco_access_token}} -- a separate variable from Acme's, so both tokens can be held at once and every Railco-specific request below explicitly uses this one -- assuming this application's own org_name claim resolves to \"Railco\" on this IS."
+            "description": "Requests an application-level access token using Railco's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{railco_is_base_url}} in case Railco is served by a different IS instance/tenant than Acme). Fill in railco_client_id / railco_client_secret / railco_is_base_url in the collection variables first. On success, the test script saves access_token into {{railco_access_token}} -- a separate variable from Acme's, so both tokens can be held at once and every Railco-specific request below explicitly uses this one. This token only authenticates the caller; org identity for routing comes from the X-Org-Name header set explicitly on the downstream requests, not from any claim on this token."
           }
         },
         {
@@ -118,7 +118,7 @@
               "host": ["{{acme_is_base_url}}"],
               "path": ["oauth2", "token"]
             },
-            "description": "Requests an application-level access token using Acme's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{acme_is_base_url}} in case Acme is served by a different IS instance/tenant than Railco). Fill in acme_client_id / acme_client_secret / acme_is_base_url in the collection variables first. On success, the test script saves access_token into {{acme_access_token}} -- a separate variable from Railco's, so both tokens can be held at once and every Acme-specific request below explicitly uses this one -- assuming this application's own org_name claim resolves to \"Acme\" on this IS."
+            "description": "Requests an application-level access token using Acme's own OAuth2 application (its own client_id/client_secret, and its own token endpoint via {{acme_is_base_url}} in case Acme is served by a different IS instance/tenant than Railco). Fill in acme_client_id / acme_client_secret / acme_is_base_url in the collection variables first. On success, the test script saves access_token into {{acme_access_token}} -- a separate variable from Railco's, so both tokens can be held at once and every Acme-specific request below explicitly uses this one. This token only authenticates the caller; org identity for routing comes from the X-Org-Name header set explicitly on the downstream requests, not from any claim on this token."
           }
         },
         {
@@ -141,7 +141,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "railco" }
             ],
             "auth": {
               "type": "bearer",
@@ -159,7 +160,7 @@
               "host": ["{{gateway_base_url}}"],
               "path": ["order-management", "v1.0", "orders"]
             },
-            "description": "Calls OrderManagementAPI-v1.0 using {{railco_access_token}} (run request 1a first). jwt-auth verifies the token, then dynamic-routing reads org_name from the verified claim and routes to the matching upstreamDefinitions entry (\"railco\"). A token whose org claim doesn't match returns 502/503 by design (no fallback map configured)."
+            "description": "Calls OrderManagementAPI-v1.0 using {{railco_access_token}} (run request 1a first). jwt-auth verifies the token, then dynamic-routing reads org identity from the X-Org-Name header (not the token) and routes to the matching upstreamDefinitions entry (\"railco\"). An X-Org-Name value with no matching upstreamDefinitions entry returns 502/503 by design (no fallback map configured); a missing X-Org-Name header returns 503 directly from dynamic-routing."
           }
         },
         {
@@ -182,7 +183,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Org-Name", "value": "acme" }
             ],
             "auth": {
               "type": "bearer",
@@ -200,7 +202,7 @@
               "host": ["{{gateway_base_url}}"],
               "path": ["order-management", "v1.0", "orders"]
             },
-            "description": "Calls OrderManagementAPI-v1.0 using {{acme_access_token}} (run request 1b first). jwt-auth verifies the token, then dynamic-routing reads org_name from the verified claim and routes to the matching upstreamDefinitions entry (\"acme\"). A token whose org claim doesn't match returns 502/503 by design (no fallback map configured)."
+            "description": "Calls OrderManagementAPI-v1.0 using {{acme_access_token}} (run request 1b first). jwt-auth verifies the token, then dynamic-routing reads org identity from the X-Org-Name header (not the token) and routes to the matching upstreamDefinitions entry (\"acme\"). An X-Org-Name value with no matching upstreamDefinitions entry returns 502/503 by design (no fallback map configured); a missing X-Org-Name header returns 503 directly from dynamic-routing."
           }
         }
       ]

@@ -4,9 +4,9 @@ info:
   version: v1.0
   description: |
     Place an order against your organization's own Order Management
-    backend. The gateway identifies your organization from the org_id/
-    org_name claim in your JWT, exchanges your token for a backend-specific
-    one, and routes the request to that organization's own backend.
+    backend. The X-Org-Name header identifies your organization; the
+    gateway exchanges your token for a backend-specific one and routes
+    the request to that organization's own backend.
 servers:
   - url: http://localhost:8080/order-management/v1.0
 security:
@@ -21,8 +21,20 @@ components:
         A valid access token from the organization's own OAuth2
         application (client_credentials) or a logged-in user
         (authorization_code), issued by the org's WSO2 IS key manager.
-        Its org_id/org_name claim determines which backend the request
-        is routed to.
+        Authenticates the caller; org identity for routing is taken from
+        the X-Org-Name header, not from any token claim.
+  parameters:
+    OrgNameHeader:
+      name: X-Org-Name
+      in: header
+      required: true
+      description: >
+        Identifies the caller's organization for routing purposes. Must
+        match one of the configured upstreamDefinitions entries (e.g.
+        railco, acme) or the request is rejected (502/503).
+      schema:
+        type: string
+        example: railco
   schemas:
     Order:
       type: object
@@ -54,8 +66,11 @@ paths:
     post:
       summary: Place an order
       description: >
-        Routed to the caller's own organization's order backend. Returns
-        502/503 if the org claim doesn't match any configured backend.
+        Routed to the caller's own organization's order backend, named by
+        the X-Org-Name header. Returns 502/503 if the header doesn't
+        match any configured backend.
+      parameters:
+        - $ref: '#/components/parameters/OrgNameHeader'
       requestBody:
         required: true
         content:
@@ -72,6 +87,4 @@ paths:
         '401':
           description: Unauthorized. Missing or invalid JWT.
         '503':
-          description: >
-            No org identity found in the verified token (no org_id/
-            org_name claim).
+          description: No org identity found (missing X-Org-Name header).
