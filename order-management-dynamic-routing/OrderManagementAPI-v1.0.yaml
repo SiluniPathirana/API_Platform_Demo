@@ -52,14 +52,14 @@ spec:
   context: /order-management/$version
   upstream:
     main:
-      url: http://host.docker.internal:7096   # default/fallback — used when org_id has no matching upstreamDefinitions entry
+      url: http://77.112.16.220:7096   # default/fallback — used when org_id has no matching upstreamDefinitions entry
   upstreamDefinitions:
     - name: railco
       upstreams:
-        - url: http://host.docker.internal:7093
+        - url: http://77.112.16.220:7093
     - name: acme
       upstreams:
-        - url: http://host.docker.internal:7095
+        - url: http://77.112.16.220:7095
   policies:
     - name: jwt-auth
       version: v1
@@ -71,7 +71,7 @@ spec:
         # Name of the request header carrying the caller's org id.
         # Config-only change, no rebuild needed.
         orgIDHeader: "X-Org-Name"
-        exchangeServiceUrl: "http://host.docker.internal:7099/exchange"
+        exchangeServiceUrl: "http://77.112.16.220:7099/exchange"
         # Header the exchanged backend-specific token is sent to the backend
         # in, as "Bearer <token>". The caller's original Authorization header
         # is dropped before forwarding -- the backend only ever sees this
