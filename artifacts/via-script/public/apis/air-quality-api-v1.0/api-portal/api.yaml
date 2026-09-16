@@ -1,0 +1,35 @@
+apiVersion: api-portal.api-platform.wso2.com/v1
+kind: RestApi
+
+metadata:
+  name: air-quality-api-v1-0
+
+spec:
+  type: REST
+  displayName: Air Quality API
+  version: v1.0
+  description: Air Quality Index readings and pollutant forecasts for a city or coordinate pair.
+  status: PUBLISHED
+  referenceID: air-quality-api-v1-0
+
+  tags:
+    - air-quality
+    - environment
+    - forecast
+
+  labels:
+    - default
+
+  subscriptionPlans:
+
+  agentVisibility: VISIBLE
+
+  businessInformation:
+    businessOwner: Platform Owner
+    businessOwnerEmail: support@example.com
+    technicalOwner: API Team
+    technicalOwnerEmail: architecture@example.com
+
+  endpoints:
+    sandboxUrl: http://localhost:8080/air-quality
+    productionUrl: http://localhost:8080/air-quality

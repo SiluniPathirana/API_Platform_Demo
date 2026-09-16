@@ -1,0 +1,27 @@
+- type: TOOL
+  name: geocodeAddress
+  description: Resolve a free-text place name or address into coordinates.
+  inputSchema:
+    type: object
+    properties:
+      query:
+        type: string
+        description: Place name or address to resolve, e.g. "Colombo, Sri Lanka"
+    required:
+      - query
+
+- type: TOOL
+  name: reverseGeocode
+  description: Resolve a lat/lon pair into a human-readable place name.
+  inputSchema:
+    type: object
+    properties:
+      lat:
+        type: number
+        description: Latitude
+      lon:
+        type: number
+        description: Longitude
+    required:
+      - lat
+      - lon

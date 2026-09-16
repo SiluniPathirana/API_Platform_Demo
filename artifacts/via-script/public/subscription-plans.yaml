@@ -1,0 +1,3 @@
+# Subscription plan definitions for design mode.
+# APIs reference plans by planName in their api.yaml subscriptionPlans list.
+# These details are shown on API cards and the subscription plans section.

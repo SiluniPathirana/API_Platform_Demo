@@ -1,0 +1,36 @@
+apiVersion: api-portal.api-platform.wso2.com/v1
+kind: RestApi
+
+metadata:
+  name: weather-api-v1-0
+
+spec:
+  type: REST
+  displayName: Weather API
+  version: v1.0
+  description: Current conditions and multi-day forecasts for any city or coordinate pair.
+  status: PUBLISHED
+  referenceID: weather-api-v1-0
+
+  tags:
+    - weather
+    - forecast
+    - geo
+
+  labels:
+    - default
+
+  subscriptionPlans:
+    - Bronze
+
+  agentVisibility: VISIBLE
+
+  businessInformation:
+    businessOwner: Platform Owner
+    businessOwnerEmail: support@example.com
+    technicalOwner: API Team
+    technicalOwnerEmail: architecture@example.com
+
+  endpoints:
+    sandboxUrl: http://localhost:8080/weather
+    productionUrl: http://localhost:8080/weather

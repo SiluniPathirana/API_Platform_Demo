@@ -1,0 +1,28 @@
+- type: TOOL
+  name: getCurrentWeather
+  description: Get the current weather conditions for a named location.
+  inputSchema:
+    type: object
+    properties:
+      location:
+        type: string
+        description: City name, e.g. "Colombo"
+    required:
+      - location
+
+- type: TOOL
+  name: getForecast
+  description: Get a multi-day weather forecast for a named location.
+  inputSchema:
+    type: object
+    properties:
+      location:
+        type: string
+        description: City name, e.g. "Colombo"
+      days:
+        type: integer
+        description: Number of days to forecast (default 3, max 10)
+        minimum: 1
+        maximum: 10
+    required:
+      - location

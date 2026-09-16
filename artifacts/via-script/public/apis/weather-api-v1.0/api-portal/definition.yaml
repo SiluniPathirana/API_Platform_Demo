@@ -1,0 +1,141 @@
+openapi: 3.0.1
+info:
+  title: Weather API
+  version: 1.0.0
+  description: |
+    Current conditions and short-term forecasts for a city or a lat/lon pair.
+servers:
+  - url: /weather
+security:
+  - ApiKeyHeader: []
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    CurrentConditions:
+      type: object
+      properties:
+        location:
+          type: string
+          example: Colombo
+        temperatureC:
+          type: number
+          example: 29.5
+        condition:
+          type: string
+          example: Partly cloudy
+        humidityPercent:
+          type: integer
+          example: 74
+        windSpeedKph:
+          type: number
+          example: 12.3
+        observedAt:
+          type: string
+          format: date-time
+      required:
+        - location
+        - temperatureC
+        - condition
+    ForecastDay:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        minTemperatureC:
+          type: number
+        maxTemperatureC:
+          type: number
+        condition:
+          type: string
+        chanceOfRainPercent:
+          type: integer
+      required:
+        - date
+        - minTemperatureC
+        - maxTemperatureC
+        - condition
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+      required:
+        - code
+        - message
+
+paths:
+  /current:
+    get:
+      summary: Get current conditions
+      description: Returns the current weather conditions for a named location or a lat/lon pair.
+      operationId: getCurrentConditions
+      tags:
+        - current
+      parameters:
+        - name: location
+          in: query
+          required: false
+          description: City name.
+          schema:
+            type: string
+        - name: lat
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: lon
+          in: query
+          required: false
+          schema:
+            type: number
+      responses:
+        '200':
+          description: OK. Current conditions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentConditions'
+        '400':
+          description: Bad Request. Neither location nor lat/lon supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /forecast:
+    get:
+      summary: Get multi-day forecast
+      description: Returns a day-by-day forecast for a named location.
+      operationId: getForecast
+      tags:
+        - forecast
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: days
+          in: query
+          required: false
+          description: Number of days to forecast (default 3, max 10).
+          schema:
+            type: integer
+            default: 3
+      responses:
+        '200':
+          description: OK. Forecast days.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ForecastDay'
