@@ -70,6 +70,10 @@ spec:
         # No claimMappings -- dynamic-routing reads org_id straight from
         # AuthContext.Properties, which jwt-auth populates automatically
         # for every non-standard claim on a successfully verified token.
+    - name: subscription-validation
+      version: v1
+      params:
+        subscriptionKeyHeader: Subscription-Key
     - name: dynamic-routing
       version: v1
       params:

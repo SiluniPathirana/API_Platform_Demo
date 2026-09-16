@@ -1,0 +1,26 @@
+apiVersion: gateway.api-platform.wso2.com/v1
+kind: RestApi
+metadata:
+  name: WeatherAPI-v1.0
+spec:
+  displayName: WeatherAPI
+  version: v1.0
+  context: /weather
+  upstream:
+    main:
+      url: http://host.docker.internal:7097   # no mock ships with this bundle -- see header
+  policies:
+    - name: api-key-auth
+      version: v1
+      params:
+        key: X-API-Key
+        in: header
+    - name: subscription-validation
+      version: v1
+      params:
+        subscriptionKeyHeader: Subscription-Key
+  operations:
+    - method: GET
+      path: /current
+    - method: GET
+      path: /forecast

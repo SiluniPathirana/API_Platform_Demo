@@ -35,8 +35,10 @@
 #
 # SAMPLES_DIR overrides which directory's apis/ and mcps/ subfolders get
 # seeded — the default is auto-detected (see below), but onboard-tenant.sh
-# points this at a single organization's own sample directory
-# (resources/samples/<org>/) so only that org's bundle is deployed.
+# points this at a single organization's own artifact directory
+# (artifacts/via-script/<org>/) so only that org's bundle is deployed. When it
+# is set, nothing else about the surrounding layout is inspected, so this runs
+# fine from a checkout that has no docker-compose.yaml of its own.
 #
 # PLAN_OVERRIDE (optional), pipe-delimited plan handles, e.g. "Gold|Silver" —
 # when set, each sample's subscriptionPlans: block is rewritten to exactly
@@ -51,31 +53,39 @@ set -euo pipefail
 
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Same layout-detection approach as setup.sh — this script is copied verbatim
-# into the distribution zip's scripts/ directory (see Makefile's dist target),
-# and both layouts put it one level below docker-compose.yaml.
-if [ -f "$THIS_DIR/../docker-compose.yaml" ]; then
-    ROOT_DIR="$(cd "$THIS_DIR/.." && pwd)"
-elif [ -f "$THIS_DIR/docker-compose.yaml" ]; then
-    ROOT_DIR="$THIS_DIR"
-else
-    echo "[seed-samples] ERROR: could not find docker-compose.yaml next to this script or its parent directory." >&2
-    echo "[seed-samples]        Run this as ./scripts/seed-samples.sh from the project root or the distribution zip." >&2
-    exit 1
-fi
-
-# SAMPLES_DIR, if the caller supplied one, is used as-is. Otherwise: the
-# distribution zip ships samples under resources/samples/; the source repo
-# keeps them at samples/ (see Makefile's dist target for the copy).
+# SAMPLES_DIR, if the caller supplied one (as onboard-tenant.sh does, pointing
+# it at a single org's artifacts/via-script/<org>/ bundle), is used as-is — the
+# seeding below only ever reads that directory's apis/ and mcps/ subfolders, so
+# nothing else about the surrounding layout matters and no root is located.
+#
+# Without it, the samples directory is auto-detected relative to the project
+# root, found the same way setup.sh does it: this script is copied verbatim into
+# the distribution zip's scripts/ directory (see Makefile's dist target), and
+# both layouts put it one level below docker-compose.yaml. The distribution zip
+# then ships samples under resources/samples/; the source repo keeps them at
+# samples/ (again, see the dist target for the copy).
 if [ -n "${SAMPLES_DIR:-}" ]; then
     [ -d "$SAMPLES_DIR" ] || { echo "[seed-samples] ERROR: SAMPLES_DIR does not exist: $SAMPLES_DIR" >&2; exit 1; }
-elif [ -d "$ROOT_DIR/resources/samples" ]; then
-    SAMPLES_DIR="$ROOT_DIR/resources/samples"
-elif [ -d "$ROOT_DIR/samples" ]; then
-    SAMPLES_DIR="$ROOT_DIR/samples"
 else
-    echo "[seed-samples] ERROR: no samples directory found (looked for resources/samples and samples next to $ROOT_DIR)." >&2
-    exit 1
+    if [ -f "$THIS_DIR/../docker-compose.yaml" ]; then
+        ROOT_DIR="$(cd "$THIS_DIR/.." && pwd)"
+    elif [ -f "$THIS_DIR/docker-compose.yaml" ]; then
+        ROOT_DIR="$THIS_DIR"
+    else
+        echo "[seed-samples] ERROR: could not find docker-compose.yaml next to this script or its parent directory." >&2
+        echo "[seed-samples]        Run this as ./scripts/seed-samples.sh from the project root or the distribution zip," >&2
+        echo "[seed-samples]        or set SAMPLES_DIR to the directory whose apis/ and mcps/ folders should be seeded." >&2
+        exit 1
+    fi
+
+    if [ -d "$ROOT_DIR/resources/samples" ]; then
+        SAMPLES_DIR="$ROOT_DIR/resources/samples"
+    elif [ -d "$ROOT_DIR/samples" ]; then
+        SAMPLES_DIR="$ROOT_DIR/samples"
+    else
+        echo "[seed-samples] ERROR: no samples directory found (looked for resources/samples and samples next to $ROOT_DIR)." >&2
+        exit 1
+    fi
 fi
 
 API_PORTAL_URL="${API_PORTAL_URL:-https://localhost:9543}"

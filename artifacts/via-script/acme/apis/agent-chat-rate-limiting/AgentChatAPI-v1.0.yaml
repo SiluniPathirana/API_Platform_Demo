@@ -50,6 +50,10 @@ spec:
         # reads org_name straight from AuthContext.Properties, which
         # jwt-auth populates automatically for every non-standard claim on
         # a successfully verified token.
+    - name: subscription-validation
+      version: v1
+      params:
+        subscriptionKeyHeader: Subscription-Key
     - name: advanced-ratelimit
       version: v1
       params:

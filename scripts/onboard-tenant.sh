@@ -19,9 +19,10 @@
 # --------------------------------------------------------------------
 
 # Onboards one tenant end to end against WSO2 Identity Server + the Developer
-# Portal, driven entirely by that tenant's own sample directory
-# (resources/samples/$ORG_NAME/ — apis/, mcps/, applications.yaml,
-# subscription-plans.yaml). Six steps:
+# Portal, driven entirely by that tenant's own artifact directory
+# (artifacts/via-script/$ORG_NAME/ — apis/, mcps/, applications.yaml,
+# subscription-plans.yaml). The bundled tenants are "public" (unauthenticated
+# catalogue, no applications), "acme" and "railco". Six steps:
 #
 #   1. Registers the organization in IS (safe to re-run — an existing org is
 #      looked up rather than re-created), configures its fragment copy of the
@@ -44,8 +45,8 @@
 #      subscription-plans REST API — PUT is an upsert, one plan per request
 #      (the API silently no-ops on an array body when
 #      organization.autoCreateSubscriptionPlans is enabled, which it is by
-#      default). An org whose plans file has no entries (see "public" in the
-#      bundled samples) keeps its auto-seeded defaults
+#      default). An org whose plans file has no entries (see "public" in
+#      artifacts/via-script/) keeps its auto-seeded defaults
 #      (Bronze/Silver/Gold/Unlimited) instead.
 #   4. Seeds this organization's APIs and MCP servers from apis/ and mcps/,
 #      via seed-samples.sh (SAMPLES_DIR pointed at this org's directory),
@@ -104,13 +105,16 @@
 #   ORG_NAME=acme ROOT_APP_CLIENT_ID=... ROOT_APP_CLIENT_SECRET=... ROOT_APP_ID=... \
 #     ./scripts/onboard-tenant.sh
 #
-# SAMPLE_DIR (optional, default: ORG_NAME) names which resources/samples/
+# SAMPLE_DIR (optional, default: ORG_NAME) names which artifacts/via-script/
 # subdirectory to seed from — set it when the IS organization name can't (or
-# shouldn't) match the sample bundle's own directory name, e.g. WSO2 IS
+# shouldn't) match the artifact bundle's own directory name, e.g. WSO2 IS
 # refuses to reuse a deleted organization's name (deleting an organization
 # only deactivates its underlying tenant record, it does not free the name):
 #   ORG_NAME=acme-demo SAMPLE_DIR=acme ROOT_APP_CLIENT_ID=... ... \
 #     ./scripts/onboard-tenant.sh
+#
+# SAMPLES_ROOT (optional) overrides the directory those subdirectories are
+# looked up under, for a checkout laid out differently from this one.
 #
 # ORG_ADMIN_PASSWORD / ORG_USER_PASSWORD (optional) pin the two users'
 # passwords instead of generating (and re-printing, on every run without
@@ -161,24 +165,38 @@ command -v openssl >/dev/null 2>&1 || fail "openssl is required but not found on
 [ -n "${ROOT_APP_CLIENT_SECRET:-}" ] || fail "ROOT_APP_CLIENT_SECRET is required."
 [ -n "${ROOT_APP_ID:-}" ] || fail "ROOT_APP_ID is required — the root-org API Portal application's id (not its client ID)."
 
-SAMPLES_ROOT="$THIS_DIR/../resources/samples"
-[ -d "$SAMPLES_ROOT" ] || SAMPLES_ROOT="$THIS_DIR/../samples"
-[ -d "$SAMPLES_ROOT" ] || fail "no samples directory found next to $THIS_DIR/.."
-# SAMPLE_DIR (optional) decouples which sample bundle gets seeded from the IS
-# organization name — e.g. ORG_NAME=acme-demo SAMPLE_DIR=acme onboards an org
-# named "acme-demo" using acme's own apis/mcps/plans/applications. Defaults
-# to ORG_NAME, so the common case (they match) needs nothing extra.
+# Per-tenant artifact bundles live under artifacts/via-script/ — one
+# directory per organization ("public", "acme", "railco"), each holding the
+# apis/, mcps/, applications.yaml and subscription-plans.yaml this script
+# reads. The resources/samples and samples fallbacks keep an older
+# distribution/source layout working; SAMPLES_ROOT overrides all of them.
+PROJECT_DIR="$(cd "$THIS_DIR/.." && pwd)"
+if [ -n "${SAMPLES_ROOT:-}" ]; then
+    [ -d "$SAMPLES_ROOT" ] || fail "SAMPLES_ROOT does not exist: $SAMPLES_ROOT"
+elif [ -d "$PROJECT_DIR/artifacts/via-script" ]; then
+    SAMPLES_ROOT="$PROJECT_DIR/artifacts/via-script"
+elif [ -d "$PROJECT_DIR/resources/samples" ]; then
+    SAMPLES_ROOT="$PROJECT_DIR/resources/samples"
+elif [ -d "$PROJECT_DIR/samples" ]; then
+    SAMPLES_ROOT="$PROJECT_DIR/samples"
+else
+    fail "no artifact directory found (looked for artifacts/via-script, resources/samples and samples under $PROJECT_DIR)."
+fi
+# SAMPLE_DIR (optional) decouples which artifact bundle gets seeded from the
+# IS organization name — e.g. ORG_NAME=acme-demo SAMPLE_DIR=acme onboards an
+# org named "acme-demo" using acme's own apis/mcps/plans/applications.
+# Defaults to ORG_NAME, so the common case (they match) needs nothing extra.
 SAMPLE_DIR="${SAMPLE_DIR:-$ORG_NAME}"
 ORG_SAMPLE_DIR="$SAMPLES_ROOT/$SAMPLE_DIR"
-[ -d "$ORG_SAMPLE_DIR" ] || fail "no sample directory '$SAMPLE_DIR' at $ORG_SAMPLE_DIR"
+[ -d "$ORG_SAMPLE_DIR" ] || fail "no artifact directory '$SAMPLE_DIR' at $ORG_SAMPLE_DIR (available: $(ls -1 "$SAMPLES_ROOT" 2>/dev/null | tr '\n' ' '))"
 
 PLANS_YAML="$ORG_SAMPLE_DIR/subscription-plans.yaml"
 APPLICATIONS_YAML="$ORG_SAMPLE_DIR/applications.yaml"
 
 # Whether this org gets a subscriber user, portal applications and
 # subscriptions is derived entirely from whether applications.yaml lists
-# anything — no separate flag needed. ("public" in the bundled samples has
-# an empty applications.yaml and ends up with only its dp_admin user.)
+# anything — no separate flag needed. ("public" has an empty
+# applications.yaml and ends up with only its dp_admin user.)
 HAS_APPLICATIONS=0
 if [ -f "$APPLICATIONS_YAML" ] && grep -q '^  - metadata:' "$APPLICATIONS_YAML"; then
     HAS_APPLICATIONS=1
@@ -572,7 +590,7 @@ fi
 # to rewrite every sample's subscriptionPlans: block to $ORG_PLANS — so a
 # seeded API never advertises a plan that doesn't exist in this org (this is
 # also what resolves the REPLACE_WITH_PLATFORM_API_PLAN_ID placeholders that
-# some bundled samples ship with).
+# some bundled artifacts ship with).
 
 log "Deploying '$ORG_NAME''s APIs and MCP servers from $ORG_SAMPLE_DIR ..."
 ACCESS_TOKEN="$ADMIN_TOKEN" SAMPLES_DIR="$ORG_SAMPLE_DIR" PLAN_OVERRIDE="$ORG_PLANS" \
