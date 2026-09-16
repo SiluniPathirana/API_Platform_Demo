@@ -38,7 +38,7 @@ spec:
   context: /agent/$version
   upstream:
     main:
-      url: http://host.docker.internal:7094   # mock-backends/mock-agent-backend.js
+      url: http://77.112.16.220:7094   # mock-backends/mock-agent-backend.js
   policies:
     - name: jwt-auth
       version: v1
