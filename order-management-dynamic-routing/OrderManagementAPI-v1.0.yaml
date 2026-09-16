@@ -39,7 +39,7 @@
 #   - mock-backends/mock-backend.js NAME=railco_backend PORT=7093
 #   - mock-backends/mock-backend.js NAME=acme_backend   PORT=7095
 #   - mock-backends/mock-backend.js NAME=default_backend PORT=7096
-#   - WSO2 IS instance on :9443 (IS-railco and IS-acme key managers) -- a
+#   - WSO2 IS instance on :9444 (IS-railco and IS-acme key managers) -- a
 #     real, currently-valid access token is still required (jwt-auth rejects
 #     dummy bearer tokens); the X-Org-Name header determines routing.
 apiVersion: gateway.api-platform.wso2.com/v1

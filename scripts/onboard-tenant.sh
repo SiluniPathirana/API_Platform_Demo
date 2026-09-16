@@ -22,24 +22,31 @@
 # Portal, driven entirely by that tenant's own artifact directory
 # (artifacts/via-script/$ORG_NAME/ — apis/, mcps/, applications.yaml,
 # subscription-plans.yaml). The bundled tenants are "public" (unauthenticated
-# catalogue, no applications), "acme" and "railco". Six steps:
+# catalogue, no applications), "acme" and "railco". Steps:
 #
 #   1. Registers the organization in IS (safe to re-run — an existing org is
-#      looked up rather than re-created), configures its fragment copy of the
-#      API Portal SP (password grant, JWT access tokens with roles/groups,
-#      profile claim mappings — a freshly shared application does NOT
-#      inherit any of this), and provisions its users:
+#      looked up rather than re-created), shares the root API Portal SP to it
+#      if it has no copy yet, configures that fragment copy (password grant,
+#      JWT access tokens with roles/groups, profile claim mappings — a
+#      freshly shared application does NOT inherit any of this), and
+#      provisions its users:
 #        - "${ORG_NAME}admin" (role dp_admin) — always. Does every
-#          admin-level step below (plans, APIs/MCPs, key manager) since
-#          dp_subscriber cannot.
+#          admin-level step below (plans, APIs/MCPs, key manager, webhook)
+#          since dp_subscriber cannot.
 #        - "${ORG_NAME}user" (role dp_subscriber) — only when this org's
-#          applications.yaml lists at least one application. Owns that
-#          application and its subscriptions.
+#          applications.yaml lists at least one application. Nothing in
+#          this script acts on applications.yaml's actual content anymore
+#          (see steps 5/6 below) — only whether it has any entries at all,
+#          as the signal for whether this org gets a subscriber persona to
+#          log in as and do that part by hand in the portal.
 #      Credentials for both are printed once, right after creation.
-#   2. Creates this organization's OWN OAuth2 application directly in IS
-#      (client_credentials grant) — its client_id/secret are what a caller
-#      outside the portal uses to get a token, and what step 5 links into
-#      the portal's own application record.
+#   2. Creates this organization's OWN OAuth2 application directly in the
+#      ROOT organization (client_credentials grant, not shared/org-scoped)
+#      — its client_id/secret are what a caller outside the portal uses to
+#      get a token, and what step 5 configures as this org's key manager
+#      client. Living in the root org (not inside the sub-org) means this
+#      client's own token endpoint is the plain root-level one
+#      ($IS_URL/oauth2/token), not an org-scoped $IS_URL/o/{orgId}/... one.
 #   3. Seeds this organization's subscription plans from
 #      subscription-plans.yaml (design-mode schema) via the real
 #      subscription-plans REST API — PUT is an upsert, one plan per request
@@ -53,28 +60,29 @@
 #      each rewritten to advertise exactly the plans from step 3
 #      (PLAN_OVERRIDE) rather than whatever its sample api.yaml originally
 #      listed.
-#   5. Configures a key manager (KEY_MANAGER_HANDLE) pointing at this
-#      organization's own IS token endpoint — this portal's key managers are
-#      deliberately thin (no DCR, no stored secret; just a displayName + the
-#      tokenEndpoint the portal proxies client_credentials requests to — see
-#      docs/administer/key-manager-integration.md). Then, for every entry in
-#      applications.yaml, creates a portal application (owned by
-#      "${ORG_NAME}user") and links step 2's client_id to it via
-#      generate-keys.
-#   6. If this org has applications, subscribes "${ORG_NAME}user" to every
-#      deployed REST API at one of this org's own plans (MCP servers aren't
-#      subscribable yet). Then prints the token endpoint and every
-#      consumer key/secret pair this org now has, plus example curl
-#      commands to redeem them for a token.
+#   5. Configures a key manager (KEY_MANAGER_HANDLE) pointing at step 2's
+#      root-org client's own token endpoint — this portal's key managers
+#      are deliberately thin (no DCR, no stored secret; just a displayName
+#      + the tokenEndpoint the portal proxies client_credentials requests
+#      to — see docs/administer/key-manager-integration.md). Then registers
+#      a webhook subscriber (WEBHOOK_SUBSCRIBER_ID) delivering
+#      subscription.*/apikey.* events to WEBHOOK_TARGET_URL.
+#   6. Prints the root-level token endpoint and this org's OAuth2 client
+#      id/secret, plus an example curl to redeem them for a token directly.
+#      Creating a portal application and subscribing it to APIs is NOT done
+#      by this script — that's a manual step via the portal UI, using the
+#      "${ORG_NAME}user" credentials printed in step 1.
 #
 # Prerequisites — one-time IS setup, done once for the whole deployment, not
 # per tenant (see scripts/setup_idp.sh, which automates all of this):
 #   - An OIDC application ("API Portal" or similar) registered in the root
-#     organization, shared to organizations with shareWithAllChildren
-#     (POST /api/server/v1/applications/{appId}/share) — this covers every
-#     organization created *after* the share call too, so it is not repeated
-#     per tenant. That root application's own client_id/client_secret and id
-#     are passed as ROOT_APP_CLIENT_ID / ROOT_APP_CLIENT_SECRET / ROOT_APP_ID.
+#     organization. That root application's own client_id/client_secret and
+#     id are passed as ROOT_APP_CLIENT_ID / ROOT_APP_CLIENT_SECRET /
+#     ROOT_APP_ID. Sharing it to this tenant is NOT a prerequisite — step 1b
+#     below issues the share itself (shareWithAllChildren) whenever the
+#     organization it just registered has no copy of the application yet,
+#     which is the normal state for an organization created after
+#     setup_idp.sh last ran.
 #   - "dp_admin" and "dp_subscriber" roles must exist on the root application
 #     as SHARED roles (Console > that application > Roles > Add Role, with
 #     "Share with all organizations" on) — this is what makes them appear on
@@ -86,20 +94,23 @@
 #     anything.
 #   - ROOT_APP_CLIENT_ID must be authorized (Console > that application >
 #     API Authorization, or POST .../authorized-apis) for:
-#       * internal_org_application_mgt_view, internal_org_application_mgt_update,
-#         internal_org_application_mgt_create on the "Application Management
-#         API" (identifier /o/api/server/v1/applications) — configures each
-#         organization's fragment application AND creates its own OAuth2
-#         application (steps 1/2). The _create scope is a new prerequisite
-#         as of this script's 6-step redesign — re-run setup_idp.sh (or
-#         PATCH the authorization by hand) on an already-configured IS
-#         instance to pick it up.
+#       * internal_org_application_mgt_view, internal_org_application_mgt_update
+#         on the "Application Management API" (identifier
+#         /o/api/server/v1/applications) — configures each organization's
+#         fragment application (step 1b). No _create scope needed here: this
+#         script no longer creates any application *inside* a sub-org (step 2's
+#         OAuth2 client now lives in the root organization instead, created
+#         with IS_ADMIN_USERNAME/IS_ADMIN_PASSWORD, not this scope).
 #       * internal_org_user_mgt_create, internal_org_user_mgt_list,
 #         internal_org_user_mgt_view on the "SCIM2 Users API" (identifier
 #         /o/scim2/Users) — creates and looks up the org's users (step 1).
 #       * internal_org_role_mgt_view, internal_org_role_mgt_update on the
 #         "SCIM2 Roles API" (identifier /o/scim2/Roles) — assigns roles to
 #         those users (step 1).
+#   - IS_ADMIN_USERNAME/IS_ADMIN_PASSWORD (default admin/admin) need rights
+#     to create applications in the root organization — step 2's OAuth2
+#     client is created there directly via Basic Auth, the same credentials
+#     this script already uses for organization registration/lookup.
 #
 # Usage:
 #   ORG_NAME=acme ROOT_APP_CLIENT_ID=... ROOT_APP_CLIENT_SECRET=... ROOT_APP_ID=... \
@@ -121,7 +132,7 @@
 # one) a random one each time.
 #
 # KEY_MANAGER_HANDLE (default "wso2-is") names the portal-side key manager
-# step 5 configures. IS_INTERNAL_URL (default "https://host.docker.internal:9443")
+# step 5 configures. IS_INTERNAL_URL (default "https://is.wso2.com:9444")
 # is that key manager's token endpoint's HOST — it must be reachable from the
 # PORTAL CONTAINER (not this script, not a browser), a different
 # reachability requirement than every other *_URL var below.
@@ -135,12 +146,12 @@ set -euo pipefail
 
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-IS_URL="${IS_URL:-https://localhost:9443}"
+IS_URL="${IS_URL:-https://is.wso2.com:9444}"
 IS_ADMIN_USERNAME="${IS_ADMIN_USERNAME:-admin}"
 IS_ADMIN_PASSWORD="${IS_ADMIN_PASSWORD:-admin}"
 API_PORTAL_URL="${API_PORTAL_URL:-https://localhost:9543}"
 API_PORTAL_API_BASE="/api-portal/api/v0.9"
-IS_INTERNAL_URL="${IS_INTERNAL_URL:-https://host.docker.internal:9443}"
+IS_INTERNAL_URL="${IS_INTERNAL_URL:-https://is.wso2.com:9444}"
 KEY_MANAGER_HANDLE="${KEY_MANAGER_HANDLE:-wso2-is}"
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -193,10 +204,14 @@ ORG_SAMPLE_DIR="$SAMPLES_ROOT/$SAMPLE_DIR"
 PLANS_YAML="$ORG_SAMPLE_DIR/subscription-plans.yaml"
 APPLICATIONS_YAML="$ORG_SAMPLE_DIR/applications.yaml"
 
-# Whether this org gets a subscriber user, portal applications and
-# subscriptions is derived entirely from whether applications.yaml lists
-# anything — no separate flag needed. ("public" has an empty
-# applications.yaml and ends up with only its dp_admin user.)
+# Whether this org gets a subscriber user is derived entirely from whether
+# applications.yaml lists anything — no separate flag needed. Its content is
+# NOT otherwise read or acted on by this script (creating a portal
+# application and subscribing it to APIs is a manual, UI-driven step now);
+# only presence/emptiness is used, as the existing signal for "does this org
+# get a dp_subscriber persona to log in as and do that part by hand."
+# ("public" has an empty applications.yaml and ends up with only its
+# dp_admin user.)
 HAS_APPLICATIONS=0
 if [ -f "$APPLICATIONS_YAML" ] && grep -q '^  - metadata:' "$APPLICATIONS_YAML"; then
     HAS_APPLICATIONS=1
@@ -239,29 +254,57 @@ else
     fi
 fi
 
-# --- Step 1b: configure the organization's fragment application (idempotent) -
+# --- Step 1b: share + configure the org's fragment application (idempotent) --
 # A freshly shared application's per-organization copy starts with none of
 # this — password grant disabled, opaque access tokens, no claim mappings —
 # so every organization needs it applied once. Re-running always PUTs/PATCHes
 # the same target state, so this is safe on an already-configured org too.
-#
-# The same org-scoped token (APP_MGT_TOKEN, obtained once below) is reused
-# for step 2's org-owned OAuth2 application, since both need the same
-# Application Management API scopes.
 
 log "Locating '$ORG_NAME''s copy of the API Portal application ..."
 ROOT_ORG_ID=$(curl -sk -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
     "$IS_URL/api/server/v1/organizations/$ORG_ID" | jq -r '.parent.id // empty')
 [ -n "$ROOT_ORG_ID" ] || fail "could not resolve '$ORG_NAME''s parent organization."
 
-FRAGMENT_APP_ID=$(curl -sk -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
-    "$IS_URL/api/server/v1/organizations/$ROOT_ORG_ID/applications/$ROOT_APP_ID/shared-apps" \
-    | jq -r --arg org "$ORG_ID" '.sharedApplications[]? | select(.organizationId==$org) | .applicationId')
-[ -n "$FRAGMENT_APP_ID" ] || fail "the API Portal application ($ROOT_APP_ID) is not shared to '$ORG_NAME' — share it first: POST $IS_URL/api/server/v1/applications/$ROOT_APP_ID/share with {\"shareWithAllChildren\": true}."
+lookup_fragment_app() {
+    curl -sk -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
+        "$IS_URL/api/server/v1/organizations/$ROOT_ORG_ID/applications/$ROOT_APP_ID/shared-apps" \
+        | jq -r --arg org "$ORG_ID" '.sharedApplications[]? | select(.organizationId==$org) | .applicationId' \
+        | head -1
+}
+
+FRAGMENT_APP_ID=$(lookup_fragment_app)
+if [ -z "$FRAGMENT_APP_ID" ]; then
+    # setup_idp.sh shares the root application with shareWithAllChildren, but
+    # that only reaches the organizations that existed when it ran — an org
+    # this script just created (step 1a) can still have no copy of it. So
+    # re-issue the same share here rather than failing: it is idempotent for
+    # organizations that already have their copy, and it is the only thing
+    # standing between a brand-new organization and every step below.
+    log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} no copy in '$ORG_NAME' yet — sharing the API Portal application with all organizations ..."
+    SHARE_STATUS=$(curl -sk -o /tmp/onboard-tenant-share.$$.json -w "%{http_code}" \
+        -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
+        -X POST "$IS_URL/api/server/v1/applications/$ROOT_APP_ID/share" \
+        -H "Content-Type: application/json" \
+        -d '{"shareWithAllChildren": true}')
+    SHARE_BODY=$(cat /tmp/onboard-tenant-share.$$.json); rm -f /tmp/onboard-tenant-share.$$.json
+    case "$SHARE_STATUS" in
+        200|201|202|204) log "  ${C_GREEN}${SYM_OK}${C_RESET} share requested (HTTP $SHARE_STATUS)" ;;
+        *) fail "failed to share the API Portal application ($ROOT_APP_ID) with '$ORG_NAME' (HTTP $SHARE_STATUS): $SHARE_BODY — check that ROOT_APP_ID names an application in the ROOT organization." ;;
+    esac
+    # IS creates the per-organization fragment applications asynchronously,
+    # so the share call returning does NOT mean this org's copy exists yet —
+    # poll for it instead of reading once and giving up.
+    for _ in $(seq 1 15); do
+        FRAGMENT_APP_ID=$(lookup_fragment_app)
+        if [ -n "$FRAGMENT_APP_ID" ]; then break; fi
+        sleep 2
+    done
+    [ -n "$FRAGMENT_APP_ID" ] || fail "the API Portal application ($ROOT_APP_ID) still has no copy in '$ORG_NAME' 30s after sharing it — check that ROOT_APP_ID names an application in the ROOT organization, then re-run."
+fi
 log "  found (application id: $FRAGMENT_APP_ID)"
 
-log "Obtaining an org-scoped admin token to configure applications ..."
-APP_MGT_SCOPES="internal_org_application_mgt_view internal_org_application_mgt_update internal_org_application_mgt_create"
+log "Obtaining an org-scoped admin token to configure the fragment application ..."
+APP_MGT_SCOPES="internal_org_application_mgt_view internal_org_application_mgt_update"
 CC_TOKEN=$(curl -sk -X POST "$IS_URL/oauth2/token" \
     -u "$ROOT_APP_CLIENT_ID:$ROOT_APP_CLIENT_SECRET" \
     -d "grant_type=client_credentials&scope=$APP_MGT_SCOPES" \
@@ -271,7 +314,7 @@ APP_MGT_TOKEN=$(curl -sk -X POST "$IS_URL/oauth2/token" \
     -u "$ROOT_APP_CLIENT_ID:$ROOT_APP_CLIENT_SECRET" \
     -d "grant_type=organization_switch&token=$CC_TOKEN&switching_organization=$ORG_ID&scope=$APP_MGT_SCOPES" \
     | jq -r '.access_token // empty')
-[ -n "$APP_MGT_TOKEN" ] || fail "failed to switch into '$ORG_NAME' — is ROOT_APP_CLIENT_ID authorized for internal_org_application_mgt_view/update/create on the Application Management API (/o/api/server/v1/applications)?"
+[ -n "$APP_MGT_TOKEN" ] || fail "failed to switch into '$ORG_NAME' — is ROOT_APP_CLIENT_ID authorized for internal_org_application_mgt_view/update on the Application Management API (/o/api/server/v1/applications)?"
 
 log "Configuring grant types and access token attributes ..."
 CURRENT_OIDC=$(curl -sk -H "Authorization: Bearer $APP_MGT_TOKEN" \
@@ -331,16 +374,20 @@ CLAIM_BODY=$(cat /tmp/onboard-tenant-claims.$$.json); rm -f /tmp/onboard-tenant-
 log "  ${C_GREEN}${SYM_OK}${C_RESET} claim mappings configured"
 
 # --- Step 2: this organization's own OAuth2 application (idempotent) --------
-# Created directly inside the sub-org (not shared from the root) — this is
-# what an external caller (or this script's own step 6 curl) uses to get a
-# token, and what step 5 links to a portal application via generate-keys.
-# client_credentials is the only grant it needs for that.
+# Created in the ROOT organization (not inside the sub-org, and not shared
+# from the root either) — this is what an external caller (or this script's
+# own step 6 curl) uses to get a token, and what step 5 configures as this
+# org's key manager client. client_credentials is the only grant it needs.
+# Uses IS_ADMIN_USERNAME/PASSWORD (Basic Auth), the same credentials this
+# script already uses for organization registration/lookup — no org-switched
+# token and no internal_org_application_mgt_create scope needed, since this
+# app is never created *inside* any sub-org.
 
 ORG_APP_NAME="${ORG_NAME}-key-manager"
-log "Creating '$ORG_NAME''s own OAuth2 application ('$ORG_APP_NAME') in IS ..."
+log "Creating '$ORG_NAME''s own OAuth2 application ('$ORG_APP_NAME') in the root organization ..."
 
-ORG_APP_ID=$(curl -sk -H "Authorization: Bearer $APP_MGT_TOKEN" \
-    "$IS_URL/o/api/server/v1/applications?limit=100" \
+ORG_APP_ID=$(curl -sk -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
+    "$IS_URL/api/server/v1/applications?limit=100" \
     | jq -r --arg n "$ORG_APP_NAME" '.applications[]? | select(.name==$n) | .id' | head -1)
 
 if [ -n "$ORG_APP_ID" ]; then
@@ -354,7 +401,7 @@ else
     # JWT is applied afterward instead, by the exact same convergence check
     # this runs unconditionally below for an already-existing app too.
     ORG_APP_CREATE=$(curl -sk -D - -o /dev/null -w "%{http_code}" \
-        -H "Authorization: Bearer $APP_MGT_TOKEN" -X POST "$IS_URL/o/api/server/v1/applications" \
+        -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" -X POST "$IS_URL/api/server/v1/applications" \
         -H "Content-Type: application/json" \
         -d "{\"name\": \"$ORG_APP_NAME\", \"description\": \"Key manager OAuth2 client for $ORG_NAME\", \"templateId\": \"custom-application-oidc\",
              \"inboundProtocolConfiguration\": {\"oidc\": {\"grantTypes\": [\"client_credentials\"], \"publicClient\": false}}}")
@@ -369,8 +416,8 @@ fi
 # PUT .../inbound-protocols/oidc returns 200 with an EMPTY body — a separate
 # GET is required to read back clientId/clientSecret, same story as the app
 # creation above.
-ORG_APP_OIDC=$(curl -sk -H "Authorization: Bearer $APP_MGT_TOKEN" \
-    "$IS_URL/o/api/server/v1/applications/$ORG_APP_ID/inbound-protocols/oidc")
+ORG_APP_OIDC=$(curl -sk -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
+    "$IS_URL/api/server/v1/applications/$ORG_APP_ID/inbound-protocols/oidc")
 
 # Converges an app that already existed from before this fix (accessToken.type
 # defaults to opaque, not JWT, unless requested — the create body above only
@@ -381,13 +428,13 @@ if [ "$(echo "$ORG_APP_OIDC" | jq -r '.accessToken.type // empty')" != "JWT" ]; 
     log "  converging '$ORG_APP_NAME' to JWT access tokens ..."
     MERGED_ORG_OIDC=$(echo "$ORG_APP_OIDC" | jq '.accessToken.type = "JWT"')
     ORG_OIDC_STATUS=$(curl -sk -o /tmp/onboard-tenant-orgoidc.$$.json -w "%{http_code}" \
-        -H "Authorization: Bearer $APP_MGT_TOKEN" -X PUT \
-        "$IS_URL/o/api/server/v1/applications/$ORG_APP_ID/inbound-protocols/oidc" \
+        -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" -X PUT \
+        "$IS_URL/api/server/v1/applications/$ORG_APP_ID/inbound-protocols/oidc" \
         -H "Content-Type: application/json" -d "$MERGED_ORG_OIDC")
     ORG_OIDC_BODY=$(cat /tmp/onboard-tenant-orgoidc.$$.json); rm -f /tmp/onboard-tenant-orgoidc.$$.json
     [ "$ORG_OIDC_STATUS" = "200" ] || fail "failed to switch '$ORG_APP_NAME' to JWT access tokens (HTTP $ORG_OIDC_STATUS): $ORG_OIDC_BODY"
-    ORG_APP_OIDC=$(curl -sk -H "Authorization: Bearer $APP_MGT_TOKEN" \
-        "$IS_URL/o/api/server/v1/applications/$ORG_APP_ID/inbound-protocols/oidc")
+    ORG_APP_OIDC=$(curl -sk -u "$IS_ADMIN_USERNAME:$IS_ADMIN_PASSWORD" \
+        "$IS_URL/api/server/v1/applications/$ORG_APP_ID/inbound-protocols/oidc")
 fi
 
 ORG_CLIENT_ID=$(echo "$ORG_APP_OIDC" | jq -r '.clientId // empty')
@@ -515,13 +562,16 @@ ADMIN_TOKEN=$(curl -sk -X POST "$IS_URL/o/$ORG_ID/oauth2/token" \
     | jq -r '.access_token // empty')
 [ -n "$ADMIN_TOKEN" ] || fail "failed to obtain an access token for '$ORG_ADMIN_USERNAME'."
 
-USER_TOKEN=""
+# Not kept for later use (nothing in this script acts as the subscriber user
+# anymore) — minted once purely to fail fast here if the printed credentials
+# don't actually work, rather than the operator discovering that later at
+# browser login time.
 if [ -n "$ORG_USER_USERNAME" ]; then
-    USER_TOKEN=$(curl -sk -X POST "$IS_URL/o/$ORG_ID/oauth2/token" \
+    USER_TOKEN_CHECK=$(curl -sk -X POST "$IS_URL/o/$ORG_ID/oauth2/token" \
         -u "$FRAGMENT_CLIENT_ID:$FRAGMENT_CLIENT_SECRET" \
         -d "grant_type=password&username=$(urlencode "$ORG_USER_USERNAME")&password=$(urlencode "$ORG_USER_PASSWORD")&scope=openid" \
         | jq -r '.access_token // empty')
-    [ -n "$USER_TOKEN" ] || fail "failed to obtain an access token for '$ORG_USER_USERNAME'."
+    [ -n "$USER_TOKEN_CHECK" ] || fail "failed to obtain an access token for '$ORG_USER_USERNAME'."
 fi
 log "  ${C_GREEN}${SYM_OK}${C_RESET} tokens acquired"
 
@@ -596,23 +646,25 @@ log "Deploying '$ORG_NAME''s APIs and MCP servers from $ORG_SAMPLE_DIR ..."
 ACCESS_TOKEN="$ADMIN_TOKEN" SAMPLES_DIR="$ORG_SAMPLE_DIR" PLAN_OVERRIDE="$ORG_PLANS" \
     API_PORTAL_URL="$API_PORTAL_URL" "$THIS_DIR/seed-samples.sh"
 
-# --- Step 5a: configure a key manager pointing at this organization's own IS
-# This portal's "key manager" is deliberately thin (see
+# --- Step 5a: configure a key manager pointing at step 2's root-org client's
+# own token endpoint. This portal's "key manager" is deliberately thin (see
 # docs/administer/key-manager-integration.md): just a displayName + a token
 # endpoint it proxies client_credentials requests to — the portal never
 # performs Dynamic Client Registration and never stores a client secret.
 #
-# Since every organization here already *is* its own WSO2 IS sub-org, the
-# natural key manager to register is that org's own org-scoped token
-# endpoint — no external IDP needed. IS_INTERNAL_URL (not IS_URL) is used
-# for the endpoint value itself: this URL is called by the PORTAL CONTAINER
-# at proxy time (oauthTokenService.js, server-to-server), not by this
-# script or a browser, so it needs the container-reachable hostname
-# (host.docker.internal), the same reasoning as config.toml's
-# auth.idp.token_url — see docs/administer/wso2-is-setup.md Section 4.
+# TARGET_TOKEN_ENDPOINT is the plain ROOT-level token endpoint (no
+# /o/{orgId}/ segment) — step 2's OAuth2 client lives in the root
+# organization now, not this sub-org, so that's where it redeems tokens.
+# IS_INTERNAL_URL (not IS_URL) is used for the endpoint value itself: this
+# URL is called by the PORTAL CONTAINER at proxy time (oauthTokenService.js,
+# server-to-server), not by this script or a browser, so it needs a hostname
+# that resolves from inside that container — the default
+# https://is.wso2.com:9444 in this deployment, host.docker.internal in a
+# purely local one. Same reasoning as config.toml's auth.idp.token_url — see
+# docs/administer/wso2-is-setup.md Section 4.
 
 log "Configuring key manager '$KEY_MANAGER_HANDLE' for '$ORG_NAME' ..."
-TARGET_TOKEN_ENDPOINT="$IS_INTERNAL_URL/o/$ORG_ID/oauth2/token"
+TARGET_TOKEN_ENDPOINT="$IS_INTERNAL_URL/oauth2/token"
 EXISTING_KM=$(curl -sk "$API_PORTAL_URL$API_PORTAL_API_BASE/key-managers?limit=100" \
     -H "$ADMIN_AUTH_HEADER" | jq -c --arg h "$KEY_MANAGER_HANDLE" '.list[]? | select(.id==$h)')
 EXISTING_TOKEN_ENDPOINT=$(echo "$EXISTING_KM" | jq -r '.tokenEndpoint // empty')
@@ -633,13 +685,15 @@ if [ -z "$EXISTING_KM" ]; then
 elif [ "$EXISTING_TOKEN_ENDPOINT" = "$TARGET_TOKEN_ENDPOINT" ]; then
     log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} already exists, token endpoint up to date"
 else
-    # This org was almost certainly torn down and recreated in IS since this
-    # key manager was first configured — the portal's own key_managers row
-    # persists (portal-side org identity is the org NAME, stable across IS
-    # recreation; see cleanup-tenant.sh's own header notes on this), but a
-    # freshly recreated org gets a brand-new IS org UUID, so the OLD stored
-    # token endpoint now points at a URL that no longer exists. Reconciled
-    # here rather than left stale and silently broken.
+    # A stored value that doesn't match TARGET_TOKEN_ENDPOINT is reconciled
+    # rather than left stale and silently broken — this is what upgrades a
+    # key manager stored before step 2 moved to the root organization (an
+    # old org-scoped /o/{orgId}/oauth2/token value) to the current root-level
+    # endpoint, and would equally catch any future change to how that
+    # endpoint is derived. The portal's own key_managers row persists across
+    # an IS-side org recreation (portal-side org identity is the org NAME,
+    # stable across that; see cleanup-tenant.sh's own header notes), so this
+    # also still covers that case.
     log "  ${C_YELLOW}stale token endpoint (was: $EXISTING_TOKEN_ENDPOINT) — updating${C_RESET}"
     KM_UPDATE_STATUS=$(curl -sk -o /tmp/onboard-tenant-km.$$.json -w "%{http_code}" -X PUT \
         "$API_PORTAL_URL$API_PORTAL_API_BASE/key-managers/$KEY_MANAGER_HANDLE" \
@@ -650,115 +704,47 @@ else
     log "  ${C_GREEN}${SYM_OK}${C_RESET} updated (token endpoint: $TARGET_TOKEN_ENDPOINT)"
 fi
 
-# --- Step 5b: applications from applications.yaml, linked to step 2's client
-# Owned by the subscriber user (USER_TOKEN) — skipped entirely when this org
-# has none declared.
+# --- Step 5b: register a webhook subscriber for subscription/apikey events --
+# Delivers subscription.*/apikey.* events to the gateway's mediator endpoint.
+# Uses ADMIN_TOKEN (dp_admin has dp:webhook_subscriber:manage). Idempotent by
+# id: an existing subscriber with this id is left alone rather than
+# recreated or reconciled — unlike the key manager above, nothing here needs
+# updating after an org recreation (the webhook target/secret don't depend
+# on this org's IS identity at all).
 
-APP_KEY_MAPPINGS=""
-if [ "$HAS_APPLICATIONS" = "1" ]; then
-    log "Creating applications from $APPLICATIONS_YAML for '$ORG_NAME' ..."
-    USER_AUTH_HEADER="Authorization: Bearer $USER_TOKEN"
+WEBHOOK_SUBSCRIBER_ID="${WEBHOOK_SUBSCRIBER_ID:-subscription-mediator}"
+WEBHOOK_TARGET_URL="${WEBHOOK_TARGET_URL:-http://77.112.16.220:8085/devportal/events}"
+WEBHOOK_SECRET="${WEBHOOK_SECRET:-09hIFqDrvaJcc2Dx9EOT15HxXqPeZ067/YH2T0vkmHoIjHM/tQ65IpY6XERE1UrJ}"
 
-    APPLICATION_LINES=$(awk '
-        /^  - metadata:$/ {
-            if (name != "") print name "|" displayName "|" description
-            name=""; displayName=""; description=""
-            next
-        }
-        /^      name:/         { name=$0;        sub(/^      name: */,        "", name) }
-        /^      displayName:/  { displayName=$0;  sub(/^      displayName: */, "", displayName) }
-        /^      description:/  { description=$0;  sub(/^      description: */, "", description) }
-        END { if (name != "") print name "|" displayName "|" description }
-    ' "$APPLICATIONS_YAML")
-
-    while IFS='|' read -r app_id display_name description; do
-        [ -n "$app_id" ] || continue
-        display_name="${display_name:-$app_id}"
-
-        app_body=$(jq -cn --arg id "$app_id" --arg dn "$display_name" --arg desc "$description" \
-            '{id:$id, displayName:$dn, description:$desc}')
-        app_status=$(curl -sk -o /tmp/onboard-tenant-app.$$.json -w "%{http_code}" -X POST \
-            "$API_PORTAL_URL$API_PORTAL_API_BASE/applications" \
-            -H "$USER_AUTH_HEADER" -H "Content-Type: application/json" \
-            -d "$app_body")
-        app_body_resp=$(cat /tmp/onboard-tenant-app.$$.json); rm -f /tmp/onboard-tenant-app.$$.json
-
-        if [ "$app_status" = "201" ]; then
-            log "  ${C_GREEN}${SYM_OK}${C_RESET} $app_id created"
-        elif [ "$app_status" = "409" ]; then
-            log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} $app_id already exists"
-        else
-            fail "failed to create application '$app_id' for '$ORG_NAME' (HTTP $app_status): $app_body_resp"
-        fi
-
-        # Link this org's own OAuth2 client to the application. Idempotent:
-        # if it's already mapped to this key manager, generate-keys 409s.
-        gk_status=$(curl -sk -o /tmp/onboard-tenant-gk.$$.json -w "%{http_code}" -X POST \
-            "$API_PORTAL_URL$API_PORTAL_API_BASE/applications/$app_id/generate-keys" \
-            -H "$USER_AUTH_HEADER" -H "Content-Type: application/json" \
-            -d "{\"keyManager\": \"$KEY_MANAGER_HANDLE\", \"consumerKey\": \"$ORG_CLIENT_ID\", \"type\": \"PRODUCTION\"}")
-        gk_body=$(cat /tmp/onboard-tenant-gk.$$.json); rm -f /tmp/onboard-tenant-gk.$$.json
-        if [ "$gk_status" = "200" ]; then
-            key_mapping_id=$(echo "$gk_body" | jq -r '.keyMappingId // empty')
-            log "    ${C_GREEN}${SYM_OK}${C_RESET} linked to client_id $ORG_CLIENT_ID"
-            [ -n "$key_mapping_id" ] && APP_KEY_MAPPINGS="${APP_KEY_MAPPINGS:+$APP_KEY_MAPPINGS$'\n'}$app_id|$key_mapping_id"
-        elif [ "$gk_status" = "409" ]; then
-            log "    ${C_YELLOW}${SYM_SKIP}${C_RESET} already linked"
-        else
-            fail "failed to link client_id to application '$app_id' (HTTP $gk_status): $gk_body"
-        fi
-    done <<< "$APPLICATION_LINES"
-
-    # --- Step 5c: subscribe the subscriber user to every deployed API -------
-    # MCP servers are deliberately excluded — GET /apis never returns them
-    # (they live under /mcp-servers), and subscriptions to MCP servers are
-    # not supported yet. Uses the first plan in this org's own plan set
-    # (e.g. Gold for acme, Silver for railco). Skipped outright if this org
-    # declared no plans at all (ORG_PLANS empty) — nothing to subscribe at.
-    if [ -z "$ORG_PLANS" ]; then
-        log "No subscription plans declared for '$ORG_NAME' — skipping subscriptions."
-        API_IDS=""
-    else
-        SUBSCRIPTION_PLAN="${ORG_PLANS%%|*}"
-        log "Subscribing '$ORG_USER_USERNAME' to deployed APIs (plan: $SUBSCRIPTION_PLAN) ..."
-        API_IDS=$(curl -sk "$API_PORTAL_URL$API_PORTAL_API_BASE/apis" -H "$USER_AUTH_HEADER" | jq -r '.list[]?.id // empty')
-        if [ -z "$API_IDS" ]; then
-            log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} no APIs found to subscribe to"
-        fi
-    fi
-    while IFS= read -r api_id; do
-        [ -n "$api_id" ] || continue
-
-        # createSubscription enforces no api+plan uniqueness of its own, so
-        # this script owns idempotency: skip if the user already has any
-        # subscription to this API rather than creating a duplicate.
-        EXISTING=$(curl -sk "$API_PORTAL_URL$API_PORTAL_API_BASE/subscriptions?artifactId=$(urlencode "$api_id")" \
-            -H "$USER_AUTH_HEADER" | jq -r '.list[0].subscriptionId // empty')
-        if [ -n "$EXISTING" ]; then
-            log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} $api_id (already subscribed)"
-            continue
-        fi
-
-        SUB_STATUS=$(curl -sk -o /tmp/onboard-tenant-sub.$$.json -w "%{http_code}" -X POST \
-            "$API_PORTAL_URL$API_PORTAL_API_BASE/subscriptions" \
-            -H "$USER_AUTH_HEADER" -H "Content-Type: application/json" \
-            -d "{\"artifactId\": \"$api_id\", \"subscriptionPlanId\": \"$SUBSCRIPTION_PLAN\"}")
-        SUB_BODY=$(cat /tmp/onboard-tenant-sub.$$.json); rm -f /tmp/onboard-tenant-sub.$$.json
-        if [ "$SUB_STATUS" = "201" ]; then
-            log "  ${C_GREEN}${SYM_OK}${C_RESET} $api_id"
-        elif [ "$SUB_STATUS" = "409" ]; then
-            log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} $api_id (already subscribed)"
-        else
-            log "  ${C_RED}✗${C_RESET} $api_id (HTTP $SUB_STATUS): $SUB_BODY"
-        fi
-    done <<< "$API_IDS"
+log "Registering webhook subscriber '$WEBHOOK_SUBSCRIBER_ID' for '$ORG_NAME' ..."
+EXISTING_WH_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" \
+    "$API_PORTAL_URL$API_PORTAL_API_BASE/webhook-subscribers/$WEBHOOK_SUBSCRIBER_ID" \
+    -H "$ADMIN_AUTH_HEADER")
+if [ "$EXISTING_WH_STATUS" = "200" ]; then
+    log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} already exists"
 else
-    log "No applications declared for '$ORG_NAME' — skipping application creation and subscriptions."
+    WH_BODY=$(jq -cn --arg id "$WEBHOOK_SUBSCRIBER_ID" --arg url "$WEBHOOK_TARGET_URL" --arg secret "$WEBHOOK_SECRET" \
+        '{id:$id, displayName:"Subscription Mediator", targetUrl:$url, secret:$secret,
+          events:["apikey.*","subscription.*"], enabled:true, timeoutMs:15000}')
+    WH_STATUS=$(curl -sk -o /tmp/onboard-tenant-webhook.$$.json -w "%{http_code}" -X POST \
+        "$API_PORTAL_URL$API_PORTAL_API_BASE/webhook-subscribers" \
+        -H "$ADMIN_AUTH_HEADER" -H "Content-Type: application/json" -d "$WH_BODY")
+    WH_RESP_BODY=$(cat /tmp/onboard-tenant-webhook.$$.json); rm -f /tmp/onboard-tenant-webhook.$$.json
+    if [ "$WH_STATUS" = "201" ]; then
+        log "  ${C_GREEN}${SYM_OK}${C_RESET} created (target: $WEBHOOK_TARGET_URL)"
+    elif [ "$WH_STATUS" = "409" ]; then
+        log "  ${C_YELLOW}${SYM_SKIP}${C_RESET} already exists"
+    else
+        fail "failed to register webhook subscriber for '$ORG_NAME' (HTTP $WH_STATUS): $WH_RESP_BODY"
+    fi
 fi
 
 # --- Step 6: print how to get a token ----------------------------------------
+# Creating a portal application and subscribing it to APIs is intentionally
+# NOT done here — that's a manual step via the portal UI, using the
+# "${ORG_NAME}user" credentials printed above (when this org has one).
 
-ORG_TOKEN_ENDPOINT="$IS_URL/o/$ORG_ID/oauth2/token"
+ORG_TOKEN_ENDPOINT="$IS_URL/oauth2/token"
 
 echo
 echo "${C_BOLD}'$ORG_NAME' is onboarded.${C_RESET}"
@@ -777,13 +763,9 @@ echo "  curl -k -X POST $ORG_TOKEN_ENDPOINT \\"
 echo "    -u '$ORG_CLIENT_ID:$ORG_CLIENT_SECRET' \\"
 echo "    -d 'grant_type=client_credentials'"
 
-if [ -n "$APP_KEY_MAPPINGS" ]; then
+if [ -n "$ORG_USER_USERNAME" ]; then
     echo
-    echo "Or via the portal (no secret needed on the command line once linked):"
-    while IFS='|' read -r app_id key_mapping_id; do
-        [ -n "$app_id" ] || continue
-        echo "  curl -k -X POST $API_PORTAL_URL$API_PORTAL_API_BASE/applications/$app_id/oauth-keys/$key_mapping_id/generate-token \\"
-        echo "    -H \"Authorization: Bearer <${ORG_USER_USERNAME}'s token>\" -H 'Content-Type: application/json' \\"
-        echo "    -d '{\"consumerSecret\": \"$ORG_CLIENT_SECRET\"}'"
-    done <<< "$APP_KEY_MAPPINGS"
+    echo "Next (manual, via the portal UI): log in as $ORG_USER_USERNAME, create an"
+    echo "application, and link this client_id (key manager '$KEY_MANAGER_HANDLE')"
+    echo "to it via generate-keys before subscribing to any APIs."
 fi
