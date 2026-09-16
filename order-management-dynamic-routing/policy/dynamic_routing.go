@@ -5,13 +5,12 @@
 // is sent to the backend in a separate header instead. No org-to-upstream
 // map.
 //
-// org_id is read from AuthContext.Properties[orgIDClaim] (default claim
-// name "org_id", configurable via the orgIDClaim param) -- the verified JWT
-// claim jwt-auth (or any auth policy) resolves automatically for every
-// authenticated request, with no claimMappings config needed. The caller
-// never sends org identity as a plain header; it only ever comes from the
-// token itself. A request with no AuthContext (no auth policy ran) or no
-// matching claim has no org identity at all and is rejected.
+// org_id is read from a plain request header (default name "X-Org-Name",
+// configurable via the orgIDHeader param) -- jwt-auth (or another auth
+// policy) still authenticates the caller's bearer token earlier in the
+// chain, but org identity itself comes from this header, not any verified
+// token claim. A request with no matching header has no org identity at
+// all and is rejected.
 package dynamicrouting
 
 import (
@@ -28,7 +27,7 @@ import (
 )
 
 const (
-	defaultOrgIDClaim         = "org_id"
+	defaultOrgIDHeader        = "X-Org-Name"
 	defaultExchangeServiceURL = "http://host.docker.internal:7099/exchange"
 	defaultTokenField         = "access_token"
 	defaultBackendTokenHeader = "X-Backend-Token"
@@ -39,7 +38,7 @@ const (
 // instance is created by GetPolicy and reused across requests.
 type DynamicRoutingPolicy struct {
 	httpClient         *http.Client
-	orgIDClaim         string
+	orgIDHeader        string
 	exchangeServiceURL string
 	tokenField         string
 	backendTokenHeader string
@@ -55,25 +54,22 @@ func (p *DynamicRoutingPolicy) Mode() policy.ProcessingMode {
 	}
 }
 
-// OnRequestHeaders reads the caller's org_id from the verified JWT claim in
-// AuthContext.Properties (claim name given by orgIDClaim), exchanges the
-// caller's bearer token for a backend-specific token, and routes the
-// request to the upstreamDefinitions entry named after org_id. Returns 503
-// if the claim is missing, or 502 if the token exchange fails.
+// OnRequestHeaders reads the caller's org_id from the orgIDHeader request
+// header, exchanges the caller's bearer token for a backend-specific token,
+// and routes the request to the upstreamDefinitions entry named after
+// org_id. Returns 503 if the header is missing, or 502 if the token
+// exchange fails.
 func (p *DynamicRoutingPolicy) OnRequestHeaders(
 	ctx context.Context,
 	reqCtx *policy.RequestHeaderContext,
 	params map[string]interface{},
 ) policy.RequestHeaderAction {
-	var org string
-	if reqCtx.AuthContext != nil {
-		org = reqCtx.AuthContext.Properties[p.orgIDClaim]
-	}
+	org := headerValue(reqCtx.Headers, p.orgIDHeader)
 	if org == "" {
-		log.Printf("[dynamic-routing] no %s claim in AuthContext.Properties — returning 503", p.orgIDClaim)
+		log.Printf("[dynamic-routing] no %s header — returning 503", p.orgIDHeader)
 		return policy.ImmediateResponse{StatusCode: http.StatusServiceUnavailable}
 	}
-	log.Printf("[dynamic-routing] org=%s identified from verified %s claim", org, p.orgIDClaim)
+	log.Printf("[dynamic-routing] org=%s identified from %s header", org, p.orgIDHeader)
 
 	log.Printf("[dynamic-routing] org=%s exchanging caller token via %s", org, p.exchangeServiceURL)
 	backendToken, err := p.exchangeToken(ctx, bearerToken(reqCtx.Headers))
@@ -109,6 +105,15 @@ func bearerToken(headers *policy.Headers) string {
 		return ""
 	}
 	return strings.TrimPrefix(values[0], "Bearer ")
+}
+
+// headerValue returns the first value of the given request header, if any.
+func headerValue(headers *policy.Headers, name string) string {
+	values := headers.Get(strings.ToLower(name))
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 // exchangeToken calls the external exchange service with the caller's token
@@ -165,9 +170,9 @@ func (e *exchangeError) Error() string {
 // GetPolicy is the factory called once per policy attachment, building a
 // DynamicRoutingPolicy from the attachment's params (or defaults).
 func GetPolicy(metadata policy.PolicyMetadata, params map[string]interface{}) (policy.Policy, error) {
-	orgIDClaim, _ := params["orgIDClaim"].(string)
-	if orgIDClaim == "" {
-		orgIDClaim = defaultOrgIDClaim
+	orgIDHeader, _ := params["orgIDHeader"].(string)
+	if orgIDHeader == "" {
+		orgIDHeader = defaultOrgIDHeader
 	}
 	exchangeServiceURL, _ := params["exchangeServiceUrl"].(string)
 	if exchangeServiceURL == "" {
@@ -182,11 +187,11 @@ func GetPolicy(metadata policy.PolicyMetadata, params map[string]interface{}) (p
 		backendTokenHeader = defaultBackendTokenHeader
 	}
 
-	log.Printf("[dynamic-routing] policy attached: orgIDClaim=%s exchangeServiceUrl=%s tokenField=%s backendTokenHeader=%s", orgIDClaim, exchangeServiceURL, tokenField, backendTokenHeader)
+	log.Printf("[dynamic-routing] policy attached: orgIDHeader=%s exchangeServiceUrl=%s tokenField=%s backendTokenHeader=%s", orgIDHeader, exchangeServiceURL, tokenField, backendTokenHeader)
 
 	return &DynamicRoutingPolicy{
 		httpClient:         &http.Client{Timeout: exchangeTimeout},
-		orgIDClaim:         orgIDClaim,
+		orgIDHeader:        orgIDHeader,
 		exchangeServiceURL: exchangeServiceURL,
 		tokenField:         tokenField,
 		backendTokenHeader: backendTokenHeader,
