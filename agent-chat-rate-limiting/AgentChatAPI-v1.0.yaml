@@ -8,13 +8,11 @@
 #
 # PROTECTED: jwt-auth verifies the caller's token against either of two
 # WSO2 IS key managers (IS-railco, IS-acme -- see
-# [policy_configurations.jwtauth_v1] in config.toml). Org identity comes
-# from the verified org_name claim
-# (type: authproperty, populated automatically by jwt-auth into
-# AuthContext.Properties -- same mechanism OrderManagementAPI-v1.0 uses),
-# NOT a plain header. Use-case identity is still a plain header
-# (X-Use-Case-Id) -- only org identity was required to move to the token
-# claim.
+# [policy_configurations.jwtauth_v1] in config.toml). Org identity for
+# rate-limit bucketing comes from the X-Org-Name request header (type:
+# header), NOT the verified JWT claim -- jwt-auth is used here purely to
+# authenticate the caller, not to establish org identity. Use-case
+# identity is likewise a plain header (X-Use-Case-Id).
 #
 # Each org has its own org-wide budget PLUS its own per-use-case budgets, all
 # checked independently — any one being exhausted blocks the call even if
@@ -46,10 +44,6 @@ spec:
       version: v1
       params:
         issuers: ["IS-railco", "IS-acme"]
-        # No claimMappings -- advanced-ratelimit's authproperty keyExtraction
-        # reads org_name straight from AuthContext.Properties, which
-        # jwt-auth populates automatically for every non-standard claim on
-        # a successfully verified token.
     - name: advanced-ratelimit
       version: v1
       params:
@@ -60,8 +54,8 @@ spec:
               - limit: 500
                 duration: "1m"
             keyExtraction:
-              - type: authproperty
-                key: org_name
+              - type: header
+                key: X-Org-Name
                 match: { type: regex, value: "^railco$" }
             costExtraction:
               enabled: true
@@ -75,8 +69,8 @@ spec:
               - limit: 200
                 duration: "1m"
             keyExtraction:
-              - type: authproperty
-                key: org_name
+              - type: header
+                key: X-Org-Name
                 match: { type: regex, value: "^railco$" }
               - type: header
                 key: X-Use-Case-Id
@@ -93,8 +87,8 @@ spec:
               - limit: 100
                 duration: "1m"
             keyExtraction:
-              - type: authproperty
-                key: org_name
+              - type: header
+                key: X-Org-Name
                 match: { type: regex, value: "^railco$" }
               - type: header
                 key: X-Use-Case-Id
@@ -112,8 +106,8 @@ spec:
               - limit: 150
                 duration: "1m"
             keyExtraction:
-              - type: authproperty
-                key: org_name
+              - type: header
+                key: X-Org-Name
                 match: { type: regex, value: "^acme$" }
             costExtraction:
               enabled: true
@@ -127,8 +121,8 @@ spec:
               - limit: 50
                 duration: "1m"
             keyExtraction:
-              - type: authproperty
-                key: org_name
+              - type: header
+                key: X-Org-Name
                 match: { type: regex, value: "^acme$" }
               - type: header
                 key: X-Use-Case-Id
@@ -145,8 +139,8 @@ spec:
               - limit: 70
                 duration: "1m"
             keyExtraction:
-              - type: authproperty
-                key: org_name
+              - type: header
+                key: X-Org-Name
                 match: { type: regex, value: "^acme$" }
               - type: header
                 key: X-Use-Case-Id
