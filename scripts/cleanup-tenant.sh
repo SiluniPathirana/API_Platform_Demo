@@ -69,7 +69,7 @@ set -euo pipefail
 
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-IS_URL="${IS_URL:-https://localhost:9443}"
+IS_URL="${IS_URL:-https://is.wso2.com:9444}"
 IS_ADMIN_USERNAME="${IS_ADMIN_USERNAME:-admin}"
 IS_ADMIN_PASSWORD="${IS_ADMIN_PASSWORD:-admin}"
 API_PORTAL_URL="${API_PORTAL_URL:-https://localhost:9543}"

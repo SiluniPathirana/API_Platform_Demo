@@ -51,7 +51,7 @@
 #     http://wso2.org/claims/roles throughout, confirmed working.
 #
 # Usage:
-#   IS_URL=https://your-is-host:9443 \
+#   IS_URL=https://is.wso2.com:9444 \
 #   PORTAL_CALLBACK_URL=http://your-portal-host:9543/api-portal/default/callback \
 #   PORTAL_LOGOUT_REDIRECT_URL=http://your-portal-host:9543/api-portal/logout \
 #     ./scripts/setup_idp.sh
@@ -70,7 +70,7 @@
 
 set -euo pipefail
 
-IS_URL="${IS_URL:-https://localhost:9443}"
+IS_URL="${IS_URL:-https://is.wso2.com:9444}"
 IS_INTERNAL_URL="${IS_INTERNAL_URL:-$IS_URL}"
 IS_ADMIN_USERNAME="${IS_ADMIN_USERNAME:-admin}"
 IS_ADMIN_PASSWORD="${IS_ADMIN_PASSWORD:-admin}"
@@ -233,11 +233,21 @@ curl -sk "${IS_AUTH[@]}" -X PATCH "$IS_URL/api/server/v1/applications/$APP_ID" \
     -o /dev/null -w "  ${C_GREEN}${SYM_OK}${C_RESET} (HTTP %{http_code})\n"
 
 # --- Step 7: share to all sub-organizations ----------------------------------
+# This only reaches the organizations that exist right now — an organization
+# created later has no copy of the application until the share is re-issued,
+# so onboard-tenant.sh repeats this call for any organization it finds
+# without one. Nothing here has to be re-run by hand when adding a tenant.
 
 log "Sharing to all sub-organizations ..."
-curl -sk "${IS_AUTH[@]}" -X POST "$IS_URL/api/server/v1/applications/$APP_ID/share" \
+SHARE_STATUS=$(curl -sk -o /tmp/setup-idp-share.$$.json -w "%{http_code}" \
+    "${IS_AUTH[@]}" -X POST "$IS_URL/api/server/v1/applications/$APP_ID/share" \
     -H "Content-Type: application/json" \
-    -d '{"shareWithAllChildren": true}' -o /dev/null -w "  ${C_GREEN}${SYM_OK}${C_RESET} (HTTP %{http_code})\n"
+    -d '{"shareWithAllChildren": true}')
+SHARE_BODY=$(cat /tmp/setup-idp-share.$$.json); rm -f /tmp/setup-idp-share.$$.json
+case "$SHARE_STATUS" in
+    200|201|202|204) log "  ${C_GREEN}${SYM_OK}${C_RESET} (HTTP $SHARE_STATUS)" ;;
+    *) fail "failed to share the application with sub-organizations (HTTP $SHARE_STATUS): $SHARE_BODY" ;;
+esac
 
 # --- Step 8: authorize the scopes onboard-tenant.sh/cleanup-tenant.sh need ---
 # API resource ids are looked up by identifier rather than hardcoded — they

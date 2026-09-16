@@ -1,0 +1,69 @@
+# geo-mcp-server-v1.0 — gateway-deployable MCP proxy for the Geo MCP Server
+# bundle. This is the GATEWAY half of the bundle (runtime route + tool
+# surface); api-portal/ alongside it is the PORTAL half (catalog metadata +
+# the tool list the portal renders). Neither reads the other.
+#
+# The tool set here mirrors api-portal/definition.yaml, re-expressed in the
+# gateway's own shape: MCPTool.inputSchema is a STRING holding a JSON Schema
+# document (see MCPTool in gateway-controller/api/management-openapi.yaml),
+# not a nested YAML mapping as in the portal definition.
+#
+# DUMMY UPSTREAM: no real MCP server ships with this bundle, so upstream.url
+# below points at a placeholder port that nothing listens on. The proxy
+# deploys and lists its tools, but an actual tools/call will fail to connect
+# until a real MCP server is put behind it. Swap upstream.url for the real
+# server's address when there is one.
+#
+# Deploy (create — first time):
+#   curl -X POST "http://localhost:9090/api/management/v1/mcp-proxies" \
+#     -u "admin:admin" -H "Content-Type: text/yaml" \
+#     --data-binary @geo-mcp-server-v1.0.yaml
+#
+# Update (subsequent changes):
+#   curl -X PUT "http://localhost:9090/api/management/v1/mcp-proxies/geo-mcp-server-v1.0" \
+#     -u "admin:admin" -H "Content-Type: text/yaml" \
+#     --data-binary @geo-mcp-server-v1.0.yaml
+apiVersion: gateway.api-platform.wso2.com/v1
+kind: Mcp
+metadata:
+  name: geo-mcp-server-v1.0
+spec:
+  displayName: Geo MCP Server
+  version: v1.0
+  context: /mcp/geo
+  specVersion: "2025-06-18"
+  upstream:
+    url: http://host.docker.internal:7101   # dummy — no real geo MCP server ships with this bundle
+  tools:
+    - name: geocodeAddress
+      title: Geocode Address
+      description: Resolve a free-text place name or address into coordinates.
+      inputSchema: |
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Place name or address to resolve, e.g. \"Colombo, Sri Lanka\""
+            }
+          },
+          "required": ["query"]
+        }
+    - name: reverseGeocode
+      title: Reverse Geocode
+      description: Resolve a lat/lon pair into a human-readable place name.
+      inputSchema: |
+        {
+          "type": "object",
+          "properties": {
+            "lat": {
+              "type": "number",
+              "description": "Latitude"
+            },
+            "lon": {
+              "type": "number",
+              "description": "Longitude"
+            }
+          },
+          "required": ["lat", "lon"]
+        }
