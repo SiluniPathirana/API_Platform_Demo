@@ -79,7 +79,7 @@ spec:
       params:
         # Name of the verified JWT claim carrying the caller's org id.
         # Config-only change, no rebuild needed.
-        orgIDClaim: "org_name"
+        orgIDHeader: "X-Org-Name"
         exchangeServiceUrl: "http://host.docker.internal:7099/exchange"
         # Header the exchanged backend-specific token is sent to the backend
         # in, as "Bearer <token>". The caller's original Authorization header
