@@ -1,0 +1,26 @@
+apiVersion: gateway.api-platform.wso2.com/v1
+kind: RestApi
+metadata:
+  name: AirQualityAPI-v1.0
+spec:
+  displayName: AirQualityAPI
+  version: v1.0
+  context: /air-quality
+  upstream:
+    main:
+      url: http://host.docker.internal:7098   # no mock ships with this bundle -- see header
+  policies:
+    - name: subscription-validation
+      version: v1
+      params:
+        subscriptionKeyHeader: Subscription-Key
+    - name: api-key-auth
+      version: v1
+      params:
+        key: X-API-Key
+        in: header
+  operations:
+    - method: GET
+      path: /aqi/current
+    - method: GET
+      path: /aqi/forecast
