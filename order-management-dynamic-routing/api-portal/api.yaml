@@ -43,7 +43,7 @@ spec:
     - default
 
   subscriptionPlans:
-    - REPLACE_WITH_PLATFORM_API_PLAN_ID
+    - Gold
 
   agentVisibility: VISIBLE
 
