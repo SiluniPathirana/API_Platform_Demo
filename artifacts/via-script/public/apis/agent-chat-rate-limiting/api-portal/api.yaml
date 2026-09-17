@@ -2,13 +2,9 @@
 # Plan into the Portal" step of:
 # https://wso2.com/api-platform/docs/api-portal/1.0.0/tutorials/secured-api-end-to-end/#step-5-mirror-the-api-and-plan-into-the-portal
 #
-# BEFORE PUBLISHING: this API is JWT-protected (jwt-auth) with per-org and
-# per-org-per-use-case token budgets (advanced-ratelimit), not
-# api-key-auth/subscription-validation like the tutorial's example -- so
-# `referenceId` below is a placeholder for whatever REST API id the
-# Platform API assigns when you register this API there. subscriptionPlans
-# is likewise a placeholder; drop it entirely if this API is meant to stay
-# JWT-only with no portal-issued subscription token.
+# This API is JWT-protected (jwt-auth) with per-org
+# and per-org-per-use-case token budgets (advanced-ratelimit)
+# The subscriptionPlans block is intentionally left empty.
 #
 # Publish:
 #   curl -sk -X POST https://localhost:9543/api-portal/api/v0.9/apis \
