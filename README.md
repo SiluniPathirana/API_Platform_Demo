@@ -38,7 +38,7 @@ Both Postman collections already default to these. Every TLS endpoint is self-si
 
 ### The bundle this demo deploys
 
-`artifacts/manual/order-management-dynamic-routing/` — the one bundle deliberately left out of the
+`order-management-dynamic-routing/` — the one bundle deliberately left out of the
 scripted seeding, so it can be added by hand while the audience watches. Like every bundle here it has
 two independent halves, and an API needs both to be usable:
 
@@ -62,8 +62,9 @@ two independent halves, and an API needs both to be usable:
 > `2. Deploy OrderManagementAPI > 2a. Create OrderManagementAPI-v1.0`.
 >
 > The request body is the verbatim contents of
-> `artifacts/manual/order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml`. If the API already
-> exists the create returns `409` — use `3f. Update OrderManagementAPI-v1.0` instead.
+> `order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml` — the source of truth for this API's
+> gateway definition. If the API already exists the create returns `409` — use
+> `3f. Update OrderManagementAPI-v1.0` instead.
 
 4. Back in the **API Publisher**, the newly deployed REST API now shows up there too.
 
@@ -86,12 +87,17 @@ two independent halves, and an API needs both to be usable:
    This is a *user* token carrying the `dp_admin` role.
 
    > **Postman:** `API-Platform-Demo-Postman-Collection.json` →
-   > `2. API Portal - Publish OrderManagementAPI > 2a. Publish OrderManagementAPI to the public org`.
+   > `2. API Portal - Publish the demo APIs > 2a. Publish OrderManagementAPI to the public org`
+   > (and `2b. Publish AgentChatAPI to the public org` for the other one).
    >
-   > Paste `$TOKEN` into the `portal_access_token` collection variable first. The request uploads two
+   > Each request uploads `api-portal/{api.yaml, definition.yaml}` straight from that API's own
+   > bundle at the repo root — `order-management-dynamic-routing/api-portal/` and
+   > `agent-chat-rate-limiting/api-portal/` respectively.
+   >
+   > Paste `$TOKEN` into the `portal_access_token` collection variable first. The requests upload
    > files off disk, so point Postman's working directory (Settings → General) at this
    > `API_Platform_Demo` folder and allow access to files outside it; if the file boxes on the Body
-   > tab look empty, re-select the two files by hand.
+   > tab look empty, re-select the files by hand.
 
 6. Back in the Developer Portal's `public` org, this REST API now shows up there too.
 
@@ -140,20 +146,33 @@ Repeat Step 3 in full, substituting `ORG_NAME=railco SAMPLE_DIR=railco`.
 
 1. Log in to the Developer Portal's `acme` org using the copied username/password. It shows only
    `acme`'s own catalog.
-2. Create an application, subscribe it to **OrderManagementAPI** and **AgentChatAPI**, and copy each
-   subscription's key — the portal shows it once.
+2. Create an application, subscribe it to **OrderManagementAPI**, and copy the subscription's key - the portal shows it once.
 3. Repeat for `railco`.
+
+> **Note.** As the gateway definitions currently stand, neither demo API enforces the key —
+> `order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml` carries no
+> `subscription-validation` policy either, so the `Subscription-Key` the Postman requests send is
+> accepted but never checked. Re-add the policy to that file and re-push it (gateway-management
+> collection, `3f`) if you want the subscription gate back in the demo.
 
 ### What each call must send
 
-Both demo APIs are protected by three policies, and all three have to be satisfied:
+Neither demo API carries `subscription-validation`, and `jwt-auth` only authenticates the
+caller — org identity for both routing and rate-limiting comes from the `X-Org-Name`
+**request header**, not from any JWT claim:
 
-| Policy | What the caller must send |
-|---|---|
-| `jwt-auth` | `Authorization: Bearer <token>` from the org's own key-manager client |
-| `subscription-validation` | `Subscription-Key: <key>` from the portal subscription above |
-| `dynamic-routing` (OrderManagementAPI) | `X-Org-Name: railco` \| `acme` — a **request header** |
-| `advanced-ratelimit` (AgentChatAPI) | `X-Use-Case-Id: <use case>` header; the org bucket comes from the token's **`org_name` claim** |
+| Policy | Applies to | What the caller must send |
+|---|---|---|
+| `jwt-auth` | both | `Authorization: Bearer <token>` from the org's own key-manager client |
+| `dynamic-routing` | OrderManagementAPI | `X-Org-Name: railco` \| `acme` — picks the upstream |
+| `advanced-ratelimit` | AgentChatAPI | `X-Org-Name: railco` \| `acme` — picks the org budget; plus `X-Use-Case-Id: <use case>` for the per-use-case budget |
+
+**AgentChatAPI needs no subscription at all.** It carries no `subscription-validation`
+policy and advertises no subscription plans in the portal (its `api-portal/api.yaml`
+ships a deliberately empty `subscriptionPlans:` block, which `seed-samples.sh` leaves
+alone rather than filling in from the org's plan set). A valid JWT gets a caller in;
+the token budget is the only thing that limits them after that. Any `Subscription-Key`
+header sent to it is ignored.
 
 ### Fill in the collection variables
 
@@ -165,8 +184,6 @@ In `API-Platform-Demo-Postman-Collection.json`:
 | `acme_client_id` / `acme_client_secret` | `acme`'s onboarding output (Step 3) |
 | `railco_order_management_subscription_key` | portal subscription, railco → OrderManagementAPI |
 | `acme_order_management_subscription_key` | portal subscription, acme → OrderManagementAPI |
-| `railco_agent_chat_subscription_key` | portal subscription, railco → AgentChatAPI |
-| `acme_agent_chat_subscription_key` | portal subscription, acme → AgentChatAPI |
 
 ### Generate access tokens
 
@@ -221,21 +238,24 @@ In `API-Platform-Demo-Postman-Collection.json`:
 | Symptom | Likely cause |
 |---|---|
 | `401` from any demo API | No/expired `Authorization` token, or the token was issued by a key manager the API's `jwt-auth` `issuers` list doesn't name (`IS-railco`, `IS-acme`) |
-| `403` from any demo API | Missing/wrong `Subscription-Key`, or the subscription never reached the gateway — check `WEBHOOK_SECRET` matches the mediator's `SM_WEBHOOK_SECRET` |
+| `403` from either demo API | Neither API carries `subscription-validation` as deployed, so a subscription problem is not the cause — check the token's scopes and the `jwt-auth` `issuers` list instead |
 | `503` from OrderManagementAPI | No `X-Org-Name` header, or its value names no `upstreamDefinitions` entry (only `railco` and `acme` exist; there is deliberately no fallback) |
 | `502` from OrderManagementAPI | The mock backend for that org isn't running — see the prerequisites table |
-| AgentChatAPI never returns `429` | The token has no `org_name` claim, so no org quota matches. The `X-Org-Name` header does not help here |
+| AgentChatAPI never returns `429`, and the gateway logs `Rate limit key not found for cost extraction` for every quota | No quota matched the request, so nothing is counted and no budget is ever spent. Send `X-Org-Name: railco` \| `acme` — the value is matched case-sensitively against `^railco$` / `^acme$`. A deployed copy still keyed on `authproperty: org_name` will always land here: a `client_credentials` token from `<org>-key-manager` carries no `org_name`, because that client lives in the **root** org. Re-push the API from `agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml` |
 | Postman multipart upload sends nothing | Working directory not set, or the file reference went stale — re-select the files on the Body tab |
 | `409 Conflict` on any Create request | Already deployed; use the matching Update request |
 
-**Known inconsistency.** The comment block in
-`artifacts/manual/order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml` (and its
-`via-script/acme`, `via-script/railco` copies) says `dynamic-routing` reads `org_id` "directly from the
-verified claim in AuthContext.Properties -- no claimMappings, no header at all". The policy source in
-`order-management-dynamic-routing/policy/dynamic_routing.go` does the opposite: it reads the request
-header named by the `orgIDHeader` param, and returns `503` when that header is absent. The config
-(`orgIDHeader: "X-Org-Name"`) and the Postman requests both match the code; only the prose comment is
-stale.
+**Source of truth.** Each demo API's gateway definition and portal artifacts live together at the
+repo root, and nowhere else:
+
+| API | Gateway definition | Portal artifacts |
+|---|---|---|
+| AgentChatAPI | `agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml` | `agent-chat-rate-limiting/api-portal/` |
+| OrderManagementAPI | `order-management-dynamic-routing/OrderManagementAPI-v1.0.yaml` | `order-management-dynamic-routing/api-portal/` |
+
+Both Postman collections read from exactly those files — the gateway-management collection embeds the
+two gateway YAMLs verbatim in its create/update bodies, and folder 2 of the main collection uploads
+the two `api-portal/` folders. Edit the file and re-import; never edit a body in Postman.
 
 ## Starting over
 

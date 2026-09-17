@@ -44,7 +44,10 @@
 # when set, each sample's subscriptionPlans: block is rewritten to exactly
 # this list before upload, regardless of what the sample's own api.yaml
 # declares. Used by onboard-tenant.sh so a seeded catalog only ever
-# advertises plans that actually exist in the target organization.
+# advertises plans that actually exist in the target organization. A sample
+# whose subscriptionPlans: block is already empty is the one exception — an
+# empty block means "no plans at all" (e.g. an API gated purely by a rate
+# limit, with no subscription-validation policy) and is seeded as authored.
 #
 # Safe to re-run: entries that already exist (matched by name + version) are
 # skipped, not duplicated.
@@ -233,8 +236,28 @@ seed_entry() {
     # organization. Every sample writes this as a multi-line block
     # (subscriptionPlans:\n    - Plan), confirmed in every sample checked —
     # a targeted awk substitution is reliable; no YAML parser needed.
+    #
+    # EXCEPTION: a sample whose subscriptionPlans: block is already EMPTY is
+    # left alone. An empty block is how a sample says "this API has no
+    # subscription plans at all" — AgentChatAPI, for instance, carries no
+    # subscription-validation policy on the gateway and is limited purely by
+    # its advanced-ratelimit token budget, so advertising a plan for it in
+    # the portal would be a lie. Injecting PLAN_OVERRIDE into every sample
+    # unconditionally would silently overwrite that deliberate choice, and
+    # the opt-out has to live here rather than in onboard-tenant.sh: that
+    # script computes one plan list for the whole org, not per sample.
+    local sample_declares_plans=0
+    if awk '
+        /^  subscriptionPlans:$/ { in_block = 1; next }
+        in_block && /^    - / { found = 1; next }
+        { in_block = 0 }
+        END { exit(found ? 0 : 1) }
+    ' "$api_yaml"; then
+        sample_declares_plans=1
+    fi
+
     local tmp_yaml=""
-    if [ -n "${PLAN_OVERRIDE:-}" ]; then
+    if [ -n "${PLAN_OVERRIDE:-}" ] && [ "$sample_declares_plans" -eq 1 ]; then
         tmp_yaml="/tmp/seed-samples-metadata-$$-$name.yaml"
         awk -v flat="$PLAN_OVERRIDE" '
             /^  subscriptionPlans:$/ {
