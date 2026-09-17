@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "API Platform Demo",
-    "description": "The WSO2 API Platform demo, end to end. Folders 1-2 set up and publish; folders 3-4 exercise the two demo APIs on the gateway.\n\n* **Folder 1 - API Manager DCR & admin token.** Registers the DCR application and exchanges it for an admin token ({{apim_access_token}}).\n* **Folder 2 - API Portal publish.** Mirrors OrderManagementAPI and AgentChatAPI into the Developer Portal's `public` org (README step 2.5), from each API's own api-portal/ folder at the repo root. Deploy them to the gateway first, with the \"API Platform Demo - Gateway Management\" collection.\n* **Folder 3 - OrderManagementAPI.** Header-based dynamic routing + token exchange.\n* **Folder 4 - AgentChatAPI.** Header-based, per-org AND per-org-per-use-case token-based rate limiting.\n\nIn folders 3 and 4, jwt-auth only authenticates the caller's bearer token -- org identity for routing/rate-limiting comes from the X-Org-Name header, not any JWT claim.\n\nRun '1a' (Railco) and/or '1b' (Acme) in folder 3 to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently.\n\nNOTE: every TLS endpoint here (IS, API Manager, the portal) is self-signed or has an expired cert -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise these requests fail with a TLS error.",
+    "description": "The WSO2 API Platform demo, end to end. Folders 1-2 set up and publish; folders 3-4 exercise the two demo APIs on the gateway.\n\n* **Folder 1 - API Manager DCR & admin token.** Registers the DCR application and exchanges it for an admin token ({{apim_access_token}}).\n* **Folder 2 - API Portal publish.** Mirrors OrderManagementAPI into the Developer Portal's `public` org (README step 2.5), from order-management-dynamic-routing/api-portal/ at the repo root. Deploy it to the gateway first, with the \"API Platform Demo - Gateway Management\" collection.\n* **Folder 3 - OrderManagementAPI.** Header-based dynamic routing + token exchange.\n* **Folder 4 - AgentChatAPI.** Header-based, per-org AND per-org-per-use-case token-based rate limiting.\n\nIn folders 3 and 4, jwt-auth only authenticates the caller's bearer token -- org identity for routing/rate-limiting comes from the X-Org-Name header, not any JWT claim.\n\nRun '1a' (Railco) and/or '1b' (Acme) in folder 3 to get tokens -- each saves into its OWN variable ({{railco_access_token}} / {{acme_access_token}}), so both can be held at once and every downstream request explicitly uses the right one rather than whichever token was generated most recently.\n\nNOTE: every TLS endpoint here (IS, API Manager, the portal) is self-signed or has an expired cert -- in Postman go to Settings > General and turn OFF 'SSL certificate verification' globally, otherwise these requests fail with a TLS error.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -80,11 +80,6 @@
     {
       "key": "portal_order_management_api_id",
       "value": ""
-    },
-    {
-      "key": "portal_agent_chat_api_id",
-      "value": "",
-      "type": "string"
     },
     {
       "key": "railco_order_management_subscription_key",
@@ -266,8 +261,8 @@
       ]
     },
     {
-      "name": "2. API Portal - Publish the demo APIs",
-      "description": "README step 2.5: mirrors the freshly-deployed demo APIs into the Developer Portal's `public` org, so they show up in the portal catalog alongside the APIs seeded there earlier.\n\nBoth requests upload the SOURCE OF TRUTH portal artifacts, which live next to each API's gateway definition at the repo root:\n  - OrderManagementAPI  order-management-dynamic-routing/api-portal/{api.yaml, definition.yaml}\n  - AgentChatAPI        agent-chat-rate-limiting/api-portal/{api.yaml, definition.yaml}\n\n**Before you run this:**\n\n1. Deploy the API to the gateway first -- \"API Platform Demo - Gateway Management\" collection, folder 2.\n2. Mint a `public`-org admin token and paste it into the {{portal_access_token}} variable:\n\n```\nTOKEN=$(ORG_NAME=public ORG_USERNAME=publicadmin ORG_PASSWORD='***' \\\n  IS_URL=https://is.wso2.com:9444 \\\n  ROOT_APP_CLIENT_ID=*** ROOT_APP_CLIENT_SECRET=*** ROOT_APP_ID=*** \\\n  ./scripts/get-org-token.sh)\n```\n\n   (The portal's own local-auth login, `POST {{platform_api_base_url}}/api/portal/v0.9/auth/login`, returns a root-org token -- fine for a root-org catalog, not for publishing into `public`.)\n3. Postman must be able to read the YAML files off disk: Settings > General > Working directory, point it at this API_Platform_Demo folder and allow access to files outside it. If the file boxes on the Body tab show up empty, re-select the files there by hand -- Postman stores the path, not the contents.",
+      "name": "2. API Portal - Publish OrderManagementAPI",
+      "description": "README step 2.5: mirrors the freshly-deployed OrderManagementAPI into the Developer Portal's `public` org, so it shows up in the portal catalog alongside the APIs seeded there earlier.\n\nThe request uploads the SOURCE OF TRUTH portal artifacts, which live next to the API's gateway definition at the repo root:\n  - OrderManagementAPI  order-management-dynamic-routing/api-portal/{api.yaml, definition.yaml}\n\n**Before you run this:**\n\n1. Deploy the API to the gateway first -- \"API Platform Demo - Gateway Management\" collection, folder 2.\n2. Mint a `public`-org admin token and paste it into the {{portal_access_token}} variable:\n\n```\nTOKEN=$(ORG_NAME=public ORG_USERNAME=publicadmin ORG_PASSWORD='***' \\\n  IS_URL=https://is.wso2.com:9444 \\\n  ROOT_APP_CLIENT_ID=*** ROOT_APP_CLIENT_SECRET=*** ROOT_APP_ID=*** \\\n  ./scripts/get-org-token.sh)\n```\n\n   (The portal's own local-auth login, `POST {{platform_api_base_url}}/api/portal/v0.9/auth/login`, returns a root-org token -- fine for a root-org catalog, not for publishing into `public`.)\n3. Postman must be able to read the YAML files off disk: Settings > General > Working directory, point it at this API_Platform_Demo folder and allow access to files outside it. If the file boxes on the Body tab show up empty, re-select the files there by hand -- Postman stores the path, not the contents.",
       "item": [
         {
           "name": "2a. Publish OrderManagementAPI to the public org",
@@ -340,83 +335,6 @@
               ]
             },
             "description": "Multipart POST of order-management-dynamic-routing/api-portal/{api.yaml, definition.yaml} -- the same two parts ./scripts/seed-samples.sh uploads for every other bundle, done by hand for the one API the demo adds live.\n\n409 means it is already in this org's catalog; the test treats that as a pass.\n\nEquivalent curl:\n  curl -sk -X POST \"$API_PORTAL_URL/api-portal/api/v0.9/apis\" \\\n    -H \"Authorization: Bearer $TOKEN\" \\\n    -F \"metadata=@order-management-dynamic-routing/api-portal/api.yaml;filename=api.yaml;type=application/yaml\" \\\n    -F \"definition=@order-management-dynamic-routing/api-portal/definition.yaml;type=application/octet-stream\"\n\nAfterwards, open the Developer Portal's `public` org (https://api-portal.wso2.com:9543/api-portal/public/views/default/) -- OrderManagementAPI is now listed there."
-          },
-          "protocolProfileBehavior": {
-            "strictSSL": false,
-            "followRedirects": true
-          }
-        },
-        {
-          "name": "2b. Publish AgentChatAPI to the public org",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Published (or already present)\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
-                  "});",
-                  "if (pm.response.code === 409) {",
-                  "    console.log(\"Already published to this org -- nothing to do.\");",
-                  "} else if (pm.response.code < 300) {",
-                  "    const jsonData = pm.response.json();",
-                  "    if (jsonData.id) {",
-                  "        pm.collectionVariables.set(\"portal_agent_chat_api_id\", jsonData.id);",
-                  "        console.log(\"Portal API id:\", jsonData.id);",
-                  "    }",
-                  "}",
-                  "console.log(\"Status:\", pm.response.code, pm.response.status);",
-                  "console.log(\"Body:\", pm.response.text());"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{portal_access_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "metadata",
-                  "type": "file",
-                  "src": "agent-chat-rate-limiting/api-portal/api.yaml",
-                  "contentType": "application/yaml",
-                  "description": "Portal manifest (kind: RestApi, apiVersion api-portal.api-platform.wso2.com/v1). The part's filename MUST be api.yaml -- the portal validates it against an allow-list."
-                },
-                {
-                  "key": "definition",
-                  "type": "file",
-                  "src": "agent-chat-rate-limiting/api-portal/definition.yaml",
-                  "contentType": "application/octet-stream",
-                  "description": "The OpenAPI 3.0 document the portal renders as the API's reference docs."
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{api_portal_base_url}}/api-portal/api/v0.9/apis",
-              "host": [
-                "{{api_portal_base_url}}"
-              ],
-              "path": [
-                "api-portal",
-                "api",
-                "v0.9",
-                "apis"
-              ]
-            },
-            "description": "Multipart POST of agent-chat-rate-limiting/api-portal/{api.yaml, definition.yaml} -- the source of truth for AgentChatAPI's portal artifacts.\n\nAgentChatAPI advertises NO subscription plans: its api.yaml ships a deliberately empty `subscriptionPlans:` block, because the API carries no subscription-validation policy on the gateway. Nothing to subscribe to; the advanced-ratelimit token budget is the only thing that limits a caller.\n\n409 means it is already in this org's catalog; the test treats that as a pass.\n\nEquivalent curl:\n  curl -sk -X POST \"$API_PORTAL_URL/api-portal/api/v0.9/apis\" \\\n    -H \"Authorization: Bearer $TOKEN\" \\\n    -F \"metadata=@agent-chat-rate-limiting/api-portal/api.yaml;filename=api.yaml;type=application/yaml\" \\\n    -F \"definition=@agent-chat-rate-limiting/api-portal/definition.yaml;type=application/octet-stream\"\n\nAfterwards, open the Developer Portal's `public` org (https://api-portal.wso2.com:9543/api-portal/public/views/default/) -- AgentChatAPI is now listed there."
           },
           "protocolProfileBehavior": {
             "strictSSL": false,
@@ -708,7 +626,7 @@
     },
     {
       "name": "4. AgentChatAPI - Token Rate Limiting",
-      "description": "Requests 1-3 are Railco-specific ({{railco_access_token}}, run folder 3's request 1a first); requests 4-6 are the Acme equivalents ({{acme_access_token}}, run request 1b first). Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50). Limits -- Railco: org=500/min, usecase1=200/min, usecase2=100/min. Acme: org=150/min, usecase1=50/min, usecase2=70/min.\n\nIMPORTANT -- which input picks the rate-limit bucket. The deployed artifacts/via-script/*/apis/agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml keys its org quotas on `type: authproperty, key: org_name` -- the **org_name claim on the verified token**, NOT the X-Org-Name header (an earlier revision of this API did use the header; that is what the X-Org-Name header on these requests is left over from). Only X-Use-Case-Id is still a plain header. So a token whose org_name claim is missing or wrong lands in no org bucket at all and the 429s never appear, however the X-Org-Name header is set. OrderManagementAPI in folder 3 is the opposite: its dynamic-routing policy genuinely reads the X-Org-Name header.\n\nNO SUBSCRIPTION KEY: AgentChatAPI carries no subscription-validation policy on the gateway and advertises no subscription plans in the portal -- a valid JWT is the only thing needed to get in, and the advanced-ratelimit token budget is the only thing that limits a caller. The Subscription-Key header these requests used to send has been removed; the gateway neither reads nor requires it here. OrderManagementAPI in folder 3 still does require one.",
+      "description": "Requests 1-3 are Railco-specific ({{railco_access_token}}, run folder 3's request 1a first); requests 4-6 are the Acme equivalents ({{acme_access_token}}, run request 1b first). Each call costs 50 tokens (mock-agent-backend.js returns a fixed X-Completion-Tokens: 50). Limits -- Railco: org=500/min, usecase1=200/min, usecase2=100/min. Acme: org=150/min, usecase1=50/min, usecase2=70/min.\n\nIMPORTANT -- which input picks the rate-limit bucket. The source of truth, agent-chat-rate-limiting/AgentChatAPI-v1.0.yaml, keys its org quotas on `type: header, key: X-Org-Name` -- the **X-Org-Name request header**, matched case-sensitively against ^railco$ / ^acme$. X-Use-Case-Id is likewise a plain header. jwt-auth only authenticates the caller; no token claim feeds the buckets. Same input as OrderManagementAPI's dynamic-routing in folder 3.\n\nIf the gateway logs `Rate limit key not found for cost extraction` for every quota and no 429 ever appears, the gateway is still running an older revision of this API that keyed on `authproperty: org_name` -- a client_credentials token carries no org_name, so nothing matched. Re-push it from the source of truth: \"API Platform Demo - Gateway Management\" collection, request 3c.\n\nNO SUBSCRIPTION KEY: AgentChatAPI carries no subscription-validation policy on the gateway and advertises no subscription plans in the portal -- a valid JWT is the only thing needed to get in, and the advanced-ratelimit token budget is the only thing that limits a caller. The Subscription-Key header these requests used to send has been removed; the gateway neither reads nor requires it here. OrderManagementAPI in folder 3 does not enforce one either as its source-of-truth YAML currently stands -- the Subscription-Key those requests send is accepted but never checked.",
       "item": [
         {
           "name": "1. Railco usecase1 (run 5x -- 1-4 succeed, 5th blocked at 429)",

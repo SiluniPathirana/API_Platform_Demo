@@ -87,12 +87,10 @@ two independent halves, and an API needs both to be usable:
    This is a *user* token carrying the `dp_admin` role.
 
    > **Postman:** `API-Platform-Demo-Postman-Collection.json` →
-   > `2. API Portal - Publish the demo APIs > 2a. Publish OrderManagementAPI to the public org`
-   > (and `2b. Publish AgentChatAPI to the public org` for the other one).
+   > `2. API Portal - Publish OrderManagementAPI > 2a. Publish OrderManagementAPI to the public org`.
    >
-   > Each request uploads `api-portal/{api.yaml, definition.yaml}` straight from that API's own
-   > bundle at the repo root — `order-management-dynamic-routing/api-portal/` and
-   > `agent-chat-rate-limiting/api-portal/` respectively.
+   > The request uploads `api-portal/{api.yaml, definition.yaml}` straight from that API's own
+   > bundle at the repo root — `order-management-dynamic-routing/api-portal/`.
    >
    > Paste `$TOKEN` into the `portal_access_token` collection variable first. The requests upload
    > files off disk, so point Postman's working directory (Settings → General) at this
