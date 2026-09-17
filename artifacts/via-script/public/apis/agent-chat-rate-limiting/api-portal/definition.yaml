@@ -3,8 +3,8 @@ info:
   title: Agent Chat API
   version: v1.0
   description: |
-    Send a chat/completions request to the WK AI agent. Your JWT's org_name
-    claim identifies your organization for rate-limiting purposes; the
+    Send a chat/completions request to the WK AI agent. The X-Org-Name
+    header identifies your organization for rate-limiting purposes; the
     X-Use-Case-Id header identifies which use-case within your
     organization the call belongs to. Each org has its own org-wide token
     budget PLUS its own per-use-case budgets, checked independently -- any
@@ -24,9 +24,20 @@ components:
         A valid access token from the organization's own OAuth2
         application (client_credentials) or a logged-in user
         (authorization_code), issued by the org's WSO2 IS key manager.
-        Its org_name claim determines which set of token-budget quotas
-        applies.
+        Authenticates the caller; org identity for rate-limiting is taken
+        from the X-Org-Name header, not from any token claim.
   parameters:
+    OrgNameHeader:
+      name: X-Org-Name
+      in: header
+      required: true
+      description: >
+        Identifies the caller's organization for rate-limiting purposes.
+        Must match one of the configured orgs (e.g. railco, acme) or no
+        org-wide/use-case quota will apply.
+      schema:
+        type: string
+        example: railco
     UseCaseIdHeader:
       name: X-Use-Case-Id
       in: header
@@ -78,6 +89,7 @@ paths:
         is exhausted -- the x-ratelimit-quota response header names which
         quota blocked the call.
       parameters:
+        - $ref: '#/components/parameters/OrgNameHeader'
         - $ref: '#/components/parameters/UseCaseIdHeader'
       requestBody:
         required: true
