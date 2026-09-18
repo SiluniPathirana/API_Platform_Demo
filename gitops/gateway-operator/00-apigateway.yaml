@@ -1,0 +1,35 @@
+# APIGateway CR — bootstraps the whole gateway (controller + router + policy
+# engine) by triggering an internal Helm install inside the WSO2 Gateway
+# Operator. See gateway-custom-config.yaml for the Helm values override this
+# references via configRef, and README.md in this folder for the two real
+# chart bugs it works around.
+apiVersion: gateway.api-platform.wso2.com/v1alpha1
+kind: APIGateway
+metadata:
+  name: cluster-gateway
+  namespace: default
+spec:
+  apiSelector:
+    scope: Cluster   # accepts RestApi CRs from any namespace
+  configRef:
+    name: gateway-custom-config
+  controlPlane:
+    host: gateway-control-plane.gateway-operator-system.svc.cluster.local:8443
+    tls:
+      enabled: true
+  infrastructure:
+    replicas: 1
+    labels:
+      environment: dev
+      team: platform
+    annotations:
+      prometheus.io/scrape: "true"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  storage:
+    type: sqlite

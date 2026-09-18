@@ -1,0 +1,18 @@
+# Minimal RestApi CR to prove the ArgoCD -> Operator -> Gateway loop works
+# end to end, without needing to deploy our own backend service first.
+# Routes GET /demo/info through the gateway to a public echo endpoint.
+apiVersion: gateway.api-platform.wso2.com/v1alpha1
+kind: RestApi
+metadata:
+  name: demo-api
+  namespace: default
+spec:
+  displayName: demo-api
+  version: v1.0
+  context: /demo
+  upstream:
+    main:
+      url: https://httpbin.org/anything
+  operations:
+    - method: GET
+      path: /info
