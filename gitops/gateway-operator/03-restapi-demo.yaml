@@ -16,3 +16,5 @@ spec:
   operations:
     - method: GET
       path: /info
+    - method: GET
+      path: /helloworld
