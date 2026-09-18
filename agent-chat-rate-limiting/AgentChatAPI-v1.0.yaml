@@ -1,5 +1,5 @@
 # AgentChatAPI-v1.0 — per-org AND per-org-per-use-case token budgets for
-# calls to the WK AI agent, each an explicit, independently-configurable
+# calls to the  AI agent, each an explicit, independently-configurable
 # quota (not a single generic auto-bucketed quota) via advanced-ratelimit's
 # match-gated keyExtraction. Renamed from TokenBasedThrottlingAPI-v1.0 to
 # reflect a real business scenario: rate-limiting chat/completion calls to
